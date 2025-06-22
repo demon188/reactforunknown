@@ -3,6 +3,51 @@ const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require('di
 const SelfbotClient = require('discord.js-selfbot-v13');
 const mongoose = require('mongoose');
 const fs = require('fs');
+const express = require('express');
+const app = express();
+const port = 3001;
+
+
+
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Panther</title>
+      <style>
+        body {
+          margin: 0;
+          padding: 0;
+          height: 100vh;
+          background: linear-gradient(135deg, #1e1e2f, #3b3b5f);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          color: #ffffff;
+        }
+        h1 {
+          font-size: 48px;
+          background: -webkit-linear-gradient(#ff7e5f, #feb47b);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          text-align: center;
+          box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+        }
+      </style>
+    </head>
+    <body>
+      <h1>🐾 Welcome, Panther!</h1>
+    </body>
+    </html>
+  `);
+});
+
+
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
 
 const RESTART_FILE = './restart.json';
 
@@ -111,7 +156,7 @@ const userClients = [];
         const client = new SelfbotClient.Client();
         try {
             await client.login(token);
-            console.log(`👤 Selfbot logged in as ${client.user.username}`);
+            console.log(`👤 one piece in as ${client.user.username}`);
             userClients.push(client);
         } catch (err) {
             console.error(`Login failed: ${err.message}`);
