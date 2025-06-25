@@ -1,16 +1,111 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
+const {
+    Client,
+    GatewayIntentBits,
+    Partials,
+    PermissionsBitField
+} = require('discord.js');
 const SelfbotClient = require('discord.js-selfbot-v13');
 const mongoose = require('mongoose');
 const fs = require('fs');
+const path = require('path');
+const fetch = (...args) => import('node-fetch').then(({
+    default: fetch
+}) => fetch(...args));
+
 const express = require('express');
 const app = express();
 const port = 3001;
 
 
+// Serve static files and parse JSON
+app.use(express.json());
+app.use(express.urlencoded({
+    extended: true
+}));
+
+
+
+// Endpoint to serve the manual captcha solver page
+app.get('/captcha', (req, res) => {
+    const requestPath = path.join(__dirname, 'captcha_request.json');
+    if (!fs.existsSync(requestPath)) {
+        return res.send("<h2>No CAPTCHA request detected yet.</h2>");
+    }
+
+    const payload = JSON.parse(fs.readFileSync(requestPath));
+    const sitekey = payload.captcha_sitekey; // 🔧 Make sure this matches key from JSON
+
+    if (!sitekey) return res.send("<h2>Invalid sitekey. Cannot render hCaptcha.</h2>");
+
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Solve hCaptcha</title>
+      <script src="https://hcaptcha.com/1/api.js" async defer></script>
+    </head>
+    <body>
+      <h1>Solve CAPTCHA</h1>
+      <form id="captchaForm">
+        <div class="h-captcha" data-sitekey="${sitekey}" data-callback="onCaptchaSuccess"></div>
+        <input type="hidden" id="token" name="token">
+      </form>
+      <script>
+        function onCaptchaSuccess(token) {
+          fetch('/captcha/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          }).then(() => alert('✅ Captcha submitted.'));
+        }
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// Endpoint to receive the solved token
+app.post('/captcha/token', (req, res) => {
+    const token = req.body.token;
+    if (!token) return res.status(400).send('No token provided.');
+
+    fs.writeFileSync('./captcha_token.json', JSON.stringify({
+        token
+    }, null, 2));
+    res.sendStatus(200);
+});
+
+// Start the web server (port 3001 already in use)
+app.listen(3002, () => {
+    console.log('🧩 Manual solver running ..');
+});
+
+
+// Then update your selfbot captchaSolver
+const captchaSolver = async (captcha, userAgent) => {
+    console.log("⚠️ CAPTCHA triggered! Waiting for manual solve...");
+    fs.writeFileSync('./captcha_request.json', JSON.stringify({
+        captcha_sitekey: captcha.captcha_sitekey,
+        captcha_rqdata: captcha.captcha_rqdata,
+        userAgent,
+        timestamp: Date.now()
+    }, null, 2));
+
+    // Wait for token
+    while (!fs.existsSync('./captcha_token.json')) {
+        await new Promise(res => setTimeout(res, 1000));
+    }
+
+    const tokenData = JSON.parse(fs.readFileSync('./captcha_token.json'));
+    fs.unlinkSync('./captcha_token.json');
+
+    return tokenData.token;
+};
+
 
 app.get('/', (req, res) => {
-  res.send(`
+    res.send(`
     <!DOCTYPE html>
     <html>
     <head>
@@ -46,7 +141,7 @@ app.get('/', (req, res) => {
 
 
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+    console.log(`Server is running on port ${port}`);
 });
 
 const RESTART_FILE = './restart.json';
@@ -57,7 +152,10 @@ mongoose.connect(process.env.MONGO_URI)
     .catch(err => console.error("❌ MongoDB connection error:", err));
 
 const AdminSchema = new mongoose.Schema({
-    _id: { type: String, default: "singleton" },
+    _id: {
+        type: String,
+        default: "singleton"
+    },
     admins: [String],
     approvedmember: [String],
     everyone: Boolean
@@ -74,6 +172,37 @@ const ensureAdminData = async () => {
             approvedmember: [],
             everyone: false
         });
+    }
+};
+
+const sendReply = async (msg, content, isMainbot = false) => {
+    if (isMainbot) {
+        try {
+            const ch = await mainBot.channels.fetch(msg.channel.id);
+            const fetchedMsg = await ch.messages.fetch(msg.id); // Fetch the original message
+            await fetchedMsg.reply(content); // Reply to it
+            console.log(`✅ Replied via main bot (${mainBot.user.username})`);
+            return;
+        } catch (err) {
+            console.error(`❌ Main bot failed to reply: ${err.message}`);
+            return;
+        }
+    }
+
+    if (userClients.length === 0) {
+        console.error("⚠️ No selfbots available.");
+        return;
+    }
+
+    const randomClient = userClients[Math.floor(Math.random() * userClients.length)];
+
+    try {
+        const ch = await randomClient.channels.fetch(msg.channel.id);
+        const fetchedMsg = await ch.messages.fetch(msg.id); // Fetch the original message
+        await fetchedMsg.reply(content); // Reply to it
+        console.log(`✅ Replied via ${randomClient.user.username}`);
+    } catch (err) {
+        console.error(`❌ ${randomClient.user.username} failed to reply: ${err.message}`);
     }
 };
 
@@ -114,7 +243,10 @@ for (let i = 1; i <= 12; i++) {
     const varName = `USER_TOKEN_${i}`;
     const token = process.env[varName];
     if (token) {
-        userTokens.push({ token, varName });
+        userTokens.push({
+            token,
+            varName
+        });
         console.log(`✅ ${varName} loaded`);
     } else {
         console.log(`❌ ${varName} missing`);
@@ -134,12 +266,18 @@ mainBot.once('ready', async () => {
     await ensureAdminData();
     if (fs.existsSync(RESTART_FILE)) {
         try {
-            const { restarting, channelId, messageId } = JSON.parse(fs.readFileSync(RESTART_FILE));
+            const {
+                restarting,
+                channelId,
+                messageId
+            } = JSON.parse(fs.readFileSync(RESTART_FILE));
             if (restarting) {
                 const channel = await mainBot.channels.fetch(channelId);
                 const msg = await channel.messages.fetch(messageId);
                 await msg.edit('✅ Bot restarted successfully.');
-                fs.writeFileSync(RESTART_FILE, JSON.stringify({ restarting: false }, null, 2));
+                fs.writeFileSync(RESTART_FILE, JSON.stringify({
+                    restarting: false
+                }, null, 2));
             }
         } catch (e) {
             console.error("Restart message edit failed:", e.message);
@@ -149,11 +287,40 @@ mainBot.once('ready', async () => {
 
 mainBot.login(process.env.BOT_TOKEN);
 
+
 const userClients = [];
 
 (async () => {
-    for (const { token } of userTokens) {
-        const client = new SelfbotClient.Client();
+    for (const {
+            token
+        }
+        of userTokens) {
+        const client = new SelfbotClient.Client({
+            captchaSolver: async (captcha, userAgent) => {
+                console.log("⚠️ CAPTCHA triggered! Waiting for manual solve...");
+
+                const fs = require('fs');
+
+                fs.writeFileSync('./captcha_request.json', JSON.stringify({
+                    captcha_sitekey: captcha.captcha_sitekey,
+                    captcha_rqdata: captcha.captcha_rqdata,
+                    userAgent,
+                    timestamp: Date.now()
+                }, null, 2));
+                const captchaURL = `${process.env.CAPTCHA_HOST_URL}/captcha`; // or your hosted URL
+                await sendCaptchaLink(latestCommandMessage, captchaURL, targetSelfbotClient);
+                while (!fs.existsSync('./captcha_token.json')) {
+                    await new Promise(res => setTimeout(res, 1000));
+                }
+
+                const tokenData = JSON.parse(fs.readFileSync('./captcha_token.json'));
+                fs.unlinkSync('./captcha_token.json');
+                return tokenData.token;
+            },
+            TOTPKey: null,
+            checkUpdate: false
+        });
+
         try {
             await client.login(token);
             console.log(`👤 one piece in as ${client.user.username}`);
@@ -163,8 +330,30 @@ const userClients = [];
         }
     }
 
+
+
     const selfbot2 = userClients[2];
     if (selfbot2) {
+
+
+        selfbot2.on("messageCreate", async (msg) => {
+            if (msg.author.bot || !msg.content.startsWith(prefix)) return;
+            const data = await getAdminData();
+            // ✅ Ignore if main bot is already in this guild
+            if (msg.guild && mainBot.guilds.cache.has(msg.guild.id)) return;
+            const isAdmin = data.admins.includes(msg.author.id);
+            if (!isAdmin) return;
+            try {
+                await commands(msg, data);
+            } catch (err) {
+                console.error("Command error:", err.message);
+                msg.reply(`❌ Error executing command: ${err.message}`);
+            }
+
+        })
+
+
+
         selfbot2.on("messageCreate", async (msg) => {
             if (!skullActive) return;
             const data = await getAdminData();
@@ -197,80 +386,236 @@ const userClients = [];
     }
 })();
 
-mainBot.on("messageCreate", async (msg) => {
-    if (msg.author.bot || !msg.content.startsWith(prefix)) return;
-    const data = await getAdminData();
-    const isAdmin = data.admins.includes(msg.author.id);
-    if (!isAdmin) return;
 
+async function commands(msg, data, isMainbot = false) {
     const args = msg.content.slice(prefix.length).trim().split(/ +/);
     const command = args.shift()?.toLowerCase();
 
-    if (command === "ping") return msg.reply(`🏓 ${mainBot.ws.ping.toFixed(0)}ms`);
+    if (command === "ping") return sendReply(msg, `🏓 ${mainBot.ws.ping.toFixed(0)}ms`, isMainbot);
+
 
     if (command === "addadmin") {
         const id = args[0];
         if (!id) return msg.reply("❌ Provide valid user ID");
         await addAdmin(id);
-        return msg.reply(`✅ Added admin: ${id}`);
+        return sendReply(msg, `✅ Added admin: ${id}`, isMainbot);
     }
 
     if (command === "checktokens") {
         const statuses = userClients.map((c, i) => `✅ User ${i + 1}: ${c.user.username}`);
-        return msg.reply("🧾 Token status:\n" + statuses.join("\n"));
+        return sendReply(msg, "🧾 Token status:\n" + statuses.join("\n"), isMainbot);
     }
     if (command === "help") {
-        return msg.reply(
-            `📖 **Bot Help Menu**\n\n` +
-            `**🔧 General Commands:**\n` +
-            `• \`.ping\` - Check bot latency\n` +
-            `• \`.restart\` - Restart the main bot\n\n` +
-            `**👑 Admin Management:**\n` +
-            `• \`.addadmin <user_id>\` - Add a user as bot admin\n` +
-            `• \`.checktokens\` - Show which selfbots are logged in\n\n` +
-            `**💀 Skull Tracking:**\n` +
-            `• \`.skull @user(s)/<id(s)>\` - Start tracking messages from mentioned users\n` +
-            `• \`.skull active\` - Enable skull reacting\n` +
-            `• \`.skull stop\` - Disable skull reacting\n` +
-            `• \`.skull all\` - Track everyone in server\n` +
-            `• \`.skull all stop\` - Stop tracking everyone\n` +
-            `• \`.skull list\` - View tracked user list\n` +
-            `• \`.skull remove @user(s)/<id(s)>\` - Remove specific users from tracking\n` +
-            `• \`.skull remove all\` - Remove all tracked users\n\n` +
-            `ℹ️ For setup instructions, use \`.info\``
-        );
+        return sendReply(msg,
+            `📖 **Panther Bot Help Menu**
+
+🔧 **General**
+• \`.ping\` — Check main bot latency
+• \`.restart\` — Restart the main bot
+• \`.checktokens\` — Show which selfbots are online
+
+👑 **Admin**
+• \`.addadmin <user_id>\` — Add user as bot admin
+
+🧠 **Messaging**
+• \`.msg -s:<server_id> -c:<channel_id> -b:<selfbot_user_id> <message>\`  
+   → Send message via selfbot to a specific channel
+
+🧍 **Profile Management**
+• \`.name <selfbot_user_id> <new name>\`  
+   → Change global name (nickname visible in all servers)
+• \`.pfp <selfbot_user_id>\` (reply to image)  
+   → Change profile picture of a selfbot
+
+💰 **Bankrob Button Joiner**
+• \`.joinbr -s:<server_id> -c:<channel_id> -m:<message_id>\`  
+   → All selfbots click the **JOIN BANKROB** button in a message
+
+💀 **Skull Tracker**
+• \`.skull @user(s)/<id(s)>\` — Start tracking their messages
+• \`.skull active\` — Start skull reacting
+• \`.skull stop\` — Stop skull reacting
+• \`.skull all\` — Track everyone in the server
+• \`.skull all stop\` — Stop tracking everyone
+• \`.skull list\` — View currently tracked users
+• \`.skull remove @user(s)/<id(s)>\` — Remove users from tracking
+• \`.skull remove all\` — Clear all tracked users
+
+ℹ️ Use \`.info\` to understand how skull tracking works.`,
+            isMainbot);
     }
-    
+
     if (command === "info") {
-        return msg.reply(
-            `ℹ️ **How Skull Tracking Works**\n\n` +
-            `1️⃣ **Admin Setup**\n` +
-            `• Only admins can use skull commands. Add yourself using: \`.addadmin <your_user_id>\`\n\n` +
-    
-            `2️⃣ **Tracking Users**\n` +
-            `• Track specific users: \`.skull @user1 @user2\`\n` +
-            `• Or track everyone: \`.skull all\`\n\n` +
-    
-            `3️⃣ **Activate/Stop Tracking**\n` +
-            `• Start reacting: \`.skull active\`\n` +
-            `• Stop reacting: \`.skull stop\`\n\n` +
-    
-            `4️⃣ **Reactions**\n` +
-            `• When a tracked user sends a message, all selfbots will react with 💀\n\n` +
-    
-            `⚠️ **Important Notes:**\n` +
-            `•  User1 (Luffy) must have permission to react in the server/channel\n` +
-            `•  User2 (Zoro) must be in the server where tracking is happening\n` +
-            `• The main bot doesn’t need to be in the target server — only the selfbots do\n` +
-            `• Reactions are done via the selfbot(s), not the main bot\n\n` 
-        );
+        return sendReply(msg,
+            `ℹ️ **Skull Tracking Explanation**
+
+1️⃣ **Admin Setup**
+• Only added admins can run skull commands.
+• Use \`.addadmin <your_user_id>\` once to become admin.
+
+2️⃣ **Tracking Users**
+• To track certain people: \`.skull @user1 @user2\`
+• To track everyone: \`.skull all\`
+
+3️⃣ **Control Tracking**
+• Enable reactions: \`.skull active\`
+• Disable reactions: \`.skull stop\`
+• Stop tracking everyone: \`.skull all stop\`
+
+4️⃣ **Reactions**
+• When a tracked user sends a message, all selfbots react with 💀
+
+⚠️ **Requirements**
+• First selfbot (user 1) must have permission to react
+• All selfbots must be in the server where tracking is happening
+• The main bot is only used to manage — selfbots do the reacting`,
+            isMainbot);
     }
-    
+
+    if (command === "msg") {
+        const serverArg = args.find(a => a.startsWith("-s:"));
+        const channelArg = args.find(a => a.startsWith("-c:"));
+        const botArg = args.find(a => a.startsWith("-b:"));
+
+        if (serverArg && channelArg && botArg) {
+            const serverId = serverArg.split(":")[1];
+            const channelId = channelArg.split(":")[1];
+            const botUserId = botArg.split(":")[1];
+            const message = args.filter(a => !a.startsWith("-s:") && !a.startsWith("-c:") && !a.startsWith("-b:")).join(" ");
+            if (!serverId || !channelId || !botUserId || !message) return sendReply(msg, "❌ Usage: .msg -s:serverid -c:channelid -b:selfbotuserid <message>", isMainbot);
+
+            const selfbot = userClients.find(c => c.user.id === botUserId);
+            if (!selfbot) return sendReply(msg, "❌ user not found with given ID.", isMainbot);
+
+            try {
+                const guild = await selfbot.guilds.fetch(serverId);
+                const channel = await guild.channels.fetch(channelId);
+                await channel.send(message);
+                return sendReply(msg, `📤 Message sent to <#${channelId}> via ${selfbot.user.username}`, isMainbot);
+            } catch (err) {
+                return sendReply(msg, `❌ Failed to send message`, isMainbot);
+            }
+        }
+    }
+
+    if (command === "name") {
+        const botUserId = args[0];
+        const newName = args.slice(1).join(" ");
+
+        if (!botUserId || !newName) {
+            return sendReply(msg, "❌ Usage: .name <selfbotuserid> <new name>", isMainbot);
+        }
+
+        const selfbot = userClients.find(c => c.user.id === botUserId);
+        if (!selfbot) return sendReply(msg, "❌ user not found with given ID.", isMainbot);
+
+        function setVariable(msg, selfbot) {
+            global.latestCommandMessage = msg; // the command invoker
+            global.targetSelfbotClient = selfbot;
+        }
+        try {
+            // await global.latestCommandMessage = msg; // the command invoker
+            setVariable(msg, selfbot); // the selfbot being changed
+            await selfbot.user.setGlobalName(newName);
+            return sendReply(msg, `✅ Name updated for <@${selfbot.user.id}>`, isMainbot);
+        } catch (err) {
+            console.error(`Failed to set username: ${err.message}`);
+            return sendReply(msg, `❌ Failed to update username. Reason: ${err.message}`, isMainbot);
+        }
+    }
+
+    if (command === "pfp") {
+        const botUserId = args[0];
+
+        if (!botUserId) {
+            return sendReply(msg, "❌ Usage: `.pfp <selfbotuserid>` (must be used as a reply to an image message)", isMainbot);
+        }
+
+        const selfbot = userClients.find(c => c.user.id === botUserId);
+        if (!selfbot) return sendReply(msg, "❌ user not found with given ID.", isMainbot);
+
+        // Must be replying to a message
+        if (!msg.reference?.messageId) {
+            return sendReply(msg, "❌ Please reply to an image message to use this command.", isMainbot);
+        }
+
+        try {
+            // Fetch the original message being replied to
+            const ch = await msg.channel.messages.fetch(msg.reference.messageId);
+            const attachment = ch.attachments.find(att => att.contentType?.startsWith('image/'));
+
+            if (!attachment) {
+                return sendReply(msg, "❌ Replied message must contain an image.", isMainbot);
+            }
+
+            // Set variables for captcha fallback
+            global.latestCommandMessage = msg;
+            global.targetSelfbotClient = selfbot;
+
+            // Set the avatar
+            await selfbot.user.setAvatar(attachment.url);
+            return sendReply(msg, `✅ Avatar updated for <@${selfbot.user.id}>`, isMainbot);
+        } catch (err) {
+            console.error(`Failed to set avatar: ${err.message}`);
+            return sendReply(msg, `❌ Failed to update avatar. Reason: ${err.message}`, isMainbot);
+        }
+    }
+
+    if (command === "joinbr") {
+        const serverArg = args.find(a => a.startsWith("-s:"));
+        const channelArg = args.find(a => a.startsWith("-c:"));
+        const messageArg = args.find(a => a.startsWith("-m:"));
+
+        if (!serverArg || !channelArg || !messageArg) {
+            return sendReply(msg, "❌ Usage: `.joinbr -s:serverid -c:channelid -m:messageid`", isMainbot);
+        }
+
+        const serverId = serverArg.split(":")[1];
+        const channelId = channelArg.split(":")[1];
+        const messageId = messageArg.split(":")[1];
+
+        for (const selfbot of userClients) {
+            try {
+                const guild = await selfbot.guilds.fetch(serverId);
+                const channel = await guild.channels.fetch(channelId);
+                const message = await channel.messages.fetch(messageId);
+
+                const components = message.components;
+                if (!components || components.length === 0) {
+                    console.log(`⚠️ No components found in message for ${selfbot.user.username}`);
+                    continue;
+                }
+
+                let clicked = false;
+                for (const row of components) {
+                    for (const button of row.components) {
+                        const label = (button.label || "").toLowerCase();
+                        if (label.includes("join bankrob")) {
+                            await message.clickButton(button.customId);
+                            console.log(`💰 ${selfbot.user.username} clicked 'JOIN BANKROB'`);
+                            clicked = true;
+                            break;
+                        }
+                    }
+                    if (clicked) break;
+                }
+
+                if (!clicked) {
+                    console.log(`❌ 'JOIN BANKROB' button not found for ${selfbot.user.username}`);
+                }
+
+            } catch (err) {
+                console.error(`❌ Failed for ${selfbot.user.username}: ${err.message}`);
+            }
+        }
+
+        return sendReply(msg, `✅ JOINED ALL OF US`, isMainbot);
+    }
 
     if (command === "skull") {
         if (args[0] === "stop") {
             skullActive = false;
-            return msg.reply("🚩 Skull tracking stopped.");
+            return sendReply(msg, "🚩 Skull tracking stopped.", isMainbot);
         }
 
         if (args[0] === "active") {
@@ -278,7 +623,7 @@ mainBot.on("messageCreate", async (msg) => {
             const data = await getAdminData();
             const count = data.approvedmember.length;
             const everyoneStatus = data.everyone ? "✅ Yes" : "❌ No";
-            return msg.reply(`📁 **Skull Tracking Status:**\n• Tracked Users: \`${count}\`\n• Everyone Enabled: ${everyoneStatus}`);
+            return sendReply(msg, `📁 **Skull Tracking Status:**\n• Tracked Users: \`${count}\`\n• Everyone Enabled: ${everyoneStatus}`, isMainbot);
         }
 
         if (args[0] === "remove") {
@@ -286,41 +631,76 @@ mainBot.on("messageCreate", async (msg) => {
                 const data = await getAdminData();
                 data.approvedmember = [];
                 await saveAdminData(data);
-                return msg.reply("🗑️ All ids removed.");
+                return sendReply(msg, "🗑️ All ids removed.", isMainbot);
             }
             const ids = args.slice(1).map(arg => arg.replace(/[^0-9]/g, '')).filter(Boolean);
             if (!ids.length) return msg.reply("❌ Mention users or provide valid IDs to remove.");
             await removeApprovedMembers(ids);
-            return msg.reply(`🗑️ Removed: ${ids.join(", ")}`);
+            return sendReply(msg, `🗑️ Removed: ${ids.join(", ")}`, isMainbot);
         }
 
         if (args[0] === "all") {
             if (args[1] === "stop") {
                 await setEveryoneTracking(false);
-                return msg.reply("❌ Skull tracking for everyone stopped.");
+                return sendReply(msg, "❌ Skull tracking for everyone stopped.", isMainbot);
             }
             await setEveryoneTracking(true);
-            return msg.reply("💀 Skull tracking for everyone is now active.");
+            return sendReply(msg, "💀 Skull tracking for everyone is now active.", isMainbot);
         }
 
         if (args[0] === "list") {
             const tracked = (await getAdminData()).approvedmember;
             if (!tracked.length) return msg.reply("📍 No users being tracked.");
             const lines = tracked.map(id => `<@${id}>`);
-            return msg.reply("📋 **Skull Tracking List**:\n" + lines.join("\n"));
+            return sendReply(msg, "📋 **Skull Tracking List**:\n" + lines.join("\n"), isMainbot);
         }
 
         const ids = msg.mentions.users.map(u => u.id).concat(args.filter(a => /^\d{17,20}$/.test(a)));
         if (!ids.length) return msg.reply("❌ Mention users or provide valid IDs.");
         await addApprovedMembers(ids);
-        return msg.reply(`💀 Tracking skulls for: ${ids.map(id => `<@${id}>`).join(", ")}`);
+        return sendReply(msg, `💀 Tracking skulls for: ${ids.map(id => `<@${id}>`).join(", ")}`, isMainbot);
     }
 
     if (command === "restart") {
-        const restartingMsg = await msg.reply("♻️ Restarting bot...");
-        fs.writeFileSync(RESTART_FILE, JSON.stringify({ restarting: true, channelId: msg.channel.id, messageId: restartingMsg.id }, null, 2));
+        const restartingMsg = await sendReply(msg, "♻️ Restarting server...", isMainbot);
+        fs.writeFileSync(RESTART_FILE, JSON.stringify({
+            restarting: true,
+            channelId: msg.channel.id,
+            messageId: restartingMsg.id
+        }, null, 2));
         const file = __filename; // full path of current script
         fs.utimesSync(file, new Date(), new Date()); // simulate file change
         process.exit(0);
     }
+
+}
+mainBot.on("messageCreate", async (msg) => {
+    if (msg.author.bot || !msg.content.startsWith(prefix)) return;
+    const data = await getAdminData();
+    const isAdmin = data.admins.includes(msg.author.id);
+    if (!isAdmin) return;
+    try {
+        await commands(msg, data, true);
+    } catch (err) {
+        console.error("Command error:", err.message);
+        msg.reply(`❌ Error executing command: `);
+    }
+
 });
+
+const sendCaptchaLink = async (msg, url, selfbot = null) => {
+    try {
+        const adminUser = await mainBot.users.fetch(msg.author.id); // Send to who triggered the command
+
+        let info = ` **✌️ Captcha for Changing!**\nSolve it here: ${url}`;
+
+        if (selfbot) {
+            info += `\nFor the bot: <@${selfbot.user.id}>`;
+        }
+        await adminUser.send(info);
+        console.log(`📨 Sent link via DM to ${adminUser.tag}`);
+    } catch (err) {
+        console.error("❌ Failed to DM CAPTCHA link:", err.message);
+    }
+
+};
