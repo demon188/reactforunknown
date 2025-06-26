@@ -161,6 +161,7 @@ const AdminSchema = new mongoose.Schema({
     everyone: Boolean
 });
 
+
 const AdminData = mongoose.model("AdminData", AdminSchema);
 
 const ensureAdminData = async () => {
@@ -175,6 +176,39 @@ const ensureAdminData = async () => {
     }
 };
 
+// AFK Schema Addition
+const AfkSchema = new mongoose.Schema({ afkadmin: [String] });
+const AfkData = mongoose.model("AfkData", AfkSchema);
+
+const ensureAfkData = async () => {
+  const exists = await AfkData.findOne();
+  if (!exists) await AfkData.create({ afkadmin: [] });
+};
+
+const addAfkUser = async (id) => {
+  let data = await AfkData.findOne();
+  if (!data) data = await AfkData.create({ afkadmin: [] });
+  if (!data.afkadmin.includes(id)) {
+    data.afkadmin.push(id);
+    await data.save();
+  }
+};
+
+const removeAfkUser = async (id) => {
+  const data = await AfkData.findOne();
+  if (data && data.afkadmin.includes(id)) {
+    data.afkadmin = data.afkadmin.filter(i => i !== id);
+    await data.save();
+  }
+};
+
+const getAfkUsers = async () => {
+  const data = await AfkData.findOne();
+  return data?.afkadmin || [];
+};
+
+// Call once on bot start
+ensureAfkData();
 const sendReply = async (msg, content, isMainbot = false) => {
     if (isMainbot) {
         try {
@@ -329,13 +363,35 @@ const userClients = [];
             console.error(`Login failed: ${err.message}`);
         }
     }
+    const selfbot0 = userClients[0];
+  if (selfbot0) {
+    selfbot0.on("messageCreate", async (msg) => {
+  if (msg.author.bot) return;
 
+  const afkUsers = await getAfkUsers();
 
+  // Check for AFK mentions
+  if (msg.mentions.users.size > 0) {
+    for (const [id, user] of msg.mentions.users) {
+      if (afkUsers.includes(id)) {
+        try {
+          await msg.react("🇦");
+          await msg.react("🇫");
+          await msg.react("🇰");
+        } catch (e) {
+          console.error("AFK React Error:", e.message);
+        }
+      }
+    }
+  }
+  if (afkUsers.includes(msg.author.id)) {
+    await removeAfkUser(msg.author.id);
+  }
+    });
+};
 
     const selfbot2 = userClients[2];
     if (selfbot2) {
-
-
         selfbot2.on("messageCreate", async (msg) => {
             if (msg.author.bot || !msg.content.startsWith(prefix)) return;
             const data = await getAdminData();
@@ -440,6 +496,7 @@ async function commands(msg, data, isMainbot = false) {
 • \`.skull list\` — View currently tracked users
 • \`.skull remove @user(s)/<id(s)>\` — Remove users from tracking
 • \`.skull remove all\` — Clear all tracked users
+• \`.afk\` — Assistant will react with AFK
 
 ℹ️ Use \`.info\` to understand how skull tracking works.`,
             isMainbot);
@@ -497,7 +554,11 @@ async function commands(msg, data, isMainbot = false) {
             }
         }
     }
-
+if (command === "afk") {
+  const response = await sendReply(msg, "Alr", isMainbot);
+  await addAfkUser(msg.author.id);
+  return response;
+}
     if (command === "name") {
         const botUserId = args[0];
         const newName = args.slice(1).join(" ");
