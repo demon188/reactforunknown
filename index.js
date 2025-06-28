@@ -180,6 +180,37 @@ const ensureAdminData = async () => {
 const AfkSchema = new mongoose.Schema({ afkadmin: [String] });
 const AfkData = mongoose.model("AfkData", AfkSchema);
 
+const FollowSchema = new mongoose.Schema({ followadmins: [{ userid: String, count: Number }] });
+const FollowData = mongoose.model("FollowData", FollowSchema);
+
+const ensureFollowData = async () => {
+  const exists = await FollowData.findOne();
+  if (!exists) await FollowData.create({ followadmins: [] });
+};
+
+const setFollowAdmin = async (userid, count = 5) => {
+  let data = await FollowData.findOne();
+  const existing = data.followadmins.find(f => f.userid === userid);
+  if (existing) {
+    existing.count = count;
+  } else {
+    data.followadmins.push({ userid, count });
+  }
+  await data.save();
+};
+
+const removeFollowAdmin = async (userid) => {
+  let data = await FollowData.findOne();
+  data.followadmins = data.followadmins.filter(f => f.userid !== userid);
+  await data.save();
+};
+
+const getFollowAdmins = async () => {
+  const data = await FollowData.findOne();
+  return data?.followadmins || [];
+};
+
+
 const ensureAfkData = async () => {
   const exists = await AfkData.findOne();
   if (!exists) await AfkData.create({ afkadmin: [] });
@@ -194,12 +225,18 @@ const addAfkUser = async (id) => {
   }
 };
 
+
 const removeAfkUser = async (id) => {
-  const data = await AfkData.findOne();
-  if (data && data.afkadmin.includes(id)) {
-    data.afkadmin = data.afkadmin.filter(i => i !== id);
-    await data.save();
-  }
+  let data = await AfkData.findOne();
+  if (!data) return;
+
+  if (!data.afkadmin.includes(id)) return;
+
+  // Remove the ID and re-save
+  data.afkadmin = data.afkadmin.filter(i => i !== id);
+
+  // ✅ Use `findByIdAndUpdate` to avoid version mismatch
+  await AfkData.findByIdAndUpdate(data._id, { afkadmin: data.afkadmin });
 };
 
 const getAfkUsers = async () => {
@@ -209,6 +246,7 @@ const getAfkUsers = async () => {
 
 // Call once on bot start
 ensureAfkData();
+ensureFollowData();
 const sendReply = async (msg, content, isMainbot = false) => {
     if (isMainbot) {
         try {
@@ -409,6 +447,28 @@ const userClients = [];
         })
 
 
+selfbot2.on("messageReactionAdd", async (reaction, user) => {
+    if (user.bot) return;
+    const followAdmins = await getFollowAdmins();
+    const admin = followAdmins.find(f => f.userid === user.id);
+    if (!admin) return;
+
+    try {
+      const shuffled = userClients.slice(1).sort(() => Math.random() - 0.5); // randomize remaining 11
+      const reactors = [userClients[0], ...shuffled.slice(0, admin.count - 1)];
+      for (const bot of reactors) {
+        try {
+          const ch = await bot.channels.fetch(reaction.message.channelId);
+          const msg = await ch.messages.fetch(reaction.message.id);
+          await msg.react(reaction.emoji);
+        } catch (err) {
+          console.error("Follow react error:", err.message);
+        }
+      }
+    } catch (err) {
+      console.error("Follow logic failed:", err.message);
+    }
+  });
 
         selfbot2.on("messageCreate", async (msg) => {
             if (!skullActive) return;
@@ -498,6 +558,12 @@ async function commands(msg, data, isMainbot = false) {
 • \`.skull remove all\` — Clear all tracked users
 • \`.afk\` — Assistant will react with AFK
 
+🔁 **Follow Mode**
+• \`.follow\` — Bots will mimic your reactions with 5 bots by default
+• \`.follow <1–12>\` — Set custom follow count
+• \`.follow stop\` — Stop follow reactions 
+
+
 ℹ️ Use \`.info\` to understand how skull tracking works.`,
             isMainbot);
     }
@@ -559,6 +625,18 @@ if (command === "afk") {
   await addAfkUser(msg.author.id);
   return response;
 }
+
+if (command === "follow") {
+    const arg = args[0];
+    if (arg === "stop") {
+      await removeFollowAdmin(msg.author.id);
+      return sendReply(msg, "🛑 Stoped following.", isMainbot);
+    }
+
+    const count = Math.min(Math.max(parseInt(arg || "5"), 1), 12);
+    await setFollowAdmin(msg.author.id, count);
+    return sendReply(msg, `✅ Activated following...\nFollowed by up ${count} reactions.`, isMainbot);
+  }
     if (command === "name") {
         const botUserId = args[0];
         const newName = args.slice(1).join(" ");
@@ -584,6 +662,7 @@ if (command === "afk") {
             return sendReply(msg, `❌ Failed to update username. Reason: ${err.message}`, isMainbot);
         }
     }
+
 
     if (command === "pfp") {
         const botUserId = args[0];
