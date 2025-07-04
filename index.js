@@ -701,6 +701,22 @@ if (command === "follow") {
         }
     }
 
+    if (command === "ini") {
+    const message = args.join(" ");
+    if (!message) return sendReply(msg, "❌ Usage: `.ini your message here`", isMainbot);
+
+    for (const selfbot of userClients) {
+        try {
+            const ch = await selfbot.channels.fetch(msg.channel.id);
+            await ch.send(message);
+            console.log(`📤 Sent from ${selfbot.user.username}`);
+        } catch (err) {
+            console.error(`❌ Failed to send from ${selfbot.user.username}: ${err.message}`);
+        }
+    }
+
+    return sendReply(msg, `✅ Done`, isMainbot);
+}
     if (command === "joinbr") {
         const serverArg = args.find(a => a.startsWith("-s:"));
         const channelArg = args.find(a => a.startsWith("-c:"));
