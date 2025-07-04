@@ -701,7 +701,7 @@ if (command === "follow") {
         }
     }
 
-    if (command === "ini") {
+   if (command === "ini") {
     const message = args.join(" ");
     if (!message) return sendReply(msg, "❌ Usage: `.ini your message here`", isMainbot);
 
@@ -713,10 +713,14 @@ if (command === "follow") {
         } catch (err) {
             console.error(`❌ Failed to send from ${selfbot.user.username}: ${err.message}`);
         }
+
+        // ⏳ Wait 3 seconds before next message
+        await new Promise(res => setTimeout(res, 3000));
     }
 
-    return sendReply(msg, `✅ Done`, isMainbot);
+    return sendReply(msg, `✅ DONE.`, isMainbot);
 }
+
     if (command === "joinbr") {
         const serverArg = args.find(a => a.startsWith("-s:"));
         const channelArg = args.find(a => a.startsWith("-c:"));
