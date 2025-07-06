@@ -15,7 +15,8 @@ const fetch = (...args) => import('node-fetch').then(({
 
 const express = require('express');
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 4000;
+const port2 = process.env.PORT2 || 3000;
 
 
 // Serve static files and parse JSON
@@ -77,7 +78,7 @@ app.post('/captcha/token', (req, res) => {
 });
 
 // Start the web server (port 3001 already in use)
-app.listen(3002, () => {
+app.listen(port2, () => {
     console.log('🧩 Manual solver running ..');
 });
 
@@ -771,6 +772,63 @@ if (command === "follow") {
 
         return sendReply(msg, `✅ JOINED ALL OF US`, isMainbot);
     }
+
+    if (command === "ma") {
+    const botArg = args.find(a => a.startsWith("-b:"));
+    const marketArg = args.find(a => a.startsWith("-c:"));
+
+    if (!botArg || !marketArg) {
+        return sendReply(msg, "❌ Usage: `.ma -b:<botid> -c:<marketid>`", isMainbot);
+    }
+
+    const botUserId = botArg.split(":")[1];
+    const marketId = marketArg.split(":")[1];
+
+    const selfbot = userClients.find(c => c.user.id === botUserId);
+    if (!selfbot) return sendReply(msg, "❌ Selfbot with given ID not found.", isMainbot);
+
+    try {
+        const ch = await selfbot.channels.fetch(msg.channel.id);
+        const sentMsg = await ch.send(`pls market accept ${marketId}`);
+        console.log(`📤 Sent: pls market accept ${marketId}`);
+
+        // Wait for Dank Memer's reply
+       const replyMsg = await ch.awaitMessages({
+    max: 1,
+    time: 10000,
+    filter: m => m.author.id === '270904126974590976' && m.reference?.messageId === sentMsg.id
+});
+
+const msgFromBot = replyMsg.first();
+if (!msgFromBot) return sendReply(msg, "⚠️ No reply from Dank Memer after market accept.", isMainbot);
+
+// ⏳ Wait 2s then refetch to get full button component
+await new Promise(res => setTimeout(res, 2000));
+const fullMsg = await ch.messages.fetch(msgFromBot.id);
+
+console.log(`🔍 Fetched full message with components: ${fullMsg}`);
+
+// 🔍 Try to find a "Confirm" button
+const confirmBtn = fullMsg.components
+    .flatMap(row => row.components)
+    .find(btn => (btn.label || "").toLowerCase().includes("confirm") && !btn.disabled);
+
+if (!confirmBtn) return sendReply(msg, "⚠️ Confirm button not found or disabled.", isMainbot);
+
+// ✅ Click the button
+await fullMsg.clickButton(confirmBtn.customId);
+
+  
+        console.log(`✅ Confirm button clicked via ${selfbot.user.username}`);
+
+        return sendReply(msg, `🟢 Market item \`${marketId}\` accepted and confirmed via ${selfbot.user.username}`, isMainbot);
+
+    } catch (err) {
+        console.error("❌ Error in .ma command:", err.message);
+        return sendReply(msg, `❌ Failed to accept market item.\nReason: ${err.message}`, isMainbot);
+    }
+}
+
 
     if (command === "skull") {
         if (args[0] === "stop") {
