@@ -3,7 +3,15 @@ const {
     Client,
     GatewayIntentBits,
     Partials,
-    PermissionsBitField
+    PermissionsBitField,
+    Client: BotClient,
+      ActionRowBuilder,
+      StringSelectMenuBuilder,
+      ButtonBuilder,
+      ButtonStyle,
+      ChannelType,
+      PermissionFlagsBits,
+      MessageFlags
 } = require('discord.js');
 const SelfbotClient = require('discord.js-selfbot-v13');
 const mongoose = require('mongoose');
@@ -13,6 +21,11 @@ const fetch = (...args) => import('node-fetch').then(({
     default: fetch
 }) => fetch(...args));
 
+
+const DANK_ID = '270904126974590976';
+let testInitiatorId = null;
+let cachedMutuals = [];
+const BOT_OUTPUT_CHANNEL = '1386432193617989735'; // 👈 Set this to your bot's control channel
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 4000;
@@ -311,6 +324,18 @@ const setEveryoneTracking = async (status) => {
 };
 
 console.log("🔍 Loading tokens from .env...\n");
+
+const scannerClient = new SelfbotClient.Client({
+    checkUpdate: false
+});
+scannerClient.login(process.env.SCANNER_TOKEN).then(() => {
+    console.log(`🟡 Scanner Selfbot (${scannerClient.user.username}) is ready.`);
+}).catch(err => {
+    console.error("❌ Scanner selfbot login failed:", err.message);
+});
+const { setScannerClient, runFullScan, cancelScan } = require('./roblister');
+setScannerClient(scannerClient); // inject client
+
 const userTokens = [];
 for (let i = 1; i <= 12; i++) {
     const varName = `USER_TOKEN_${i}`;
@@ -722,6 +747,101 @@ if (command === "follow") {
     return sendReply(msg, `✅ DONE.`, isMainbot);
 }
 
+if (command === "depo") {
+    const channelId = msg.channel.id;
+    const dankId = '270904126974590976';
+
+    for (const selfbot of userClients) {
+        try {
+            const ch = await selfbot.channels.fetch(channelId);
+
+            // Step 1: Send pls bal
+            await ch.send('pls bal');
+            console.log(`📤 Sent: pls bal via ${selfbot.user.username}`);
+
+            // Step 2: Wait for Dank Memer embed reply with balance
+            const replyMsg = await ch.awaitMessages({
+                max: 1,
+                time: 10000,
+                filter: m => m.author.id === dankId && m.embeds.length > 0,
+            });
+
+            const botMsg = replyMsg.first();
+            if (!botMsg) {
+                console.log(`⚠️ No embed reply from Dank Memer for ${selfbot.user.username}`);
+                continue;
+            }
+
+            const desc = botMsg.embeds[0].description || '';
+            const coinMatch = desc.match(/<:Coin:\d+>\s*([\d,]+)/);
+            if (!coinMatch) {
+                console.log(`⚠️ Coin value not found for ${selfbot.user.username}`);
+                continue;
+            }
+
+            const coinStr = coinMatch[1].replace(/,/g, '');
+            const coinValue = parseInt(coinStr, 10);
+            const reservedAmount = Math.floor(coinValue * 0.01) + 100_000;
+
+            console.log(`💰 ${selfbot.user.username} Balance: ${coinValue.toLocaleString()}`);
+
+            if (coinValue > 500_000 && coinValue > reservedAmount) {
+                const maxOffer = coinValue - reservedAmount;
+                if (maxOffer < 1_000) {
+                    console.log(`⚠️ ${selfbot.user.username} has insufficient extra to offer.`);
+                    continue;
+                }
+
+                const offerPrice = formatNumberForDank(maxOffer);
+                await ch.send(`pls market post for_coins buy 1 Apple ${offerPrice} 1 false true`);
+                console.log(`📦 ${selfbot.user.username} posted Apple at ${offerPrice}`);
+
+                const confirmMsg = await ch.awaitMessages({
+                    max: 1,
+                    time: 15000,
+                    filter: m =>
+                        m.author.id === dankId &&
+                        m.components?.some(row =>
+                            row.components.some(c => c.customId?.endsWith(':confirm'))
+                        ),
+                });
+
+                const msgWithBtn = confirmMsg.first();
+                if (!msgWithBtn) {
+                    console.log(`❌ No Confirm button for ${selfbot.user.username}`);
+                    continue;
+                }
+
+                const confirmBtn = msgWithBtn.components
+                    .flatMap(row => row.components)
+                    .find(c => c.customId?.endsWith(':confirm'));
+
+                if (confirmBtn) {
+                    try {
+                        await msgWithBtn.clickButton(confirmBtn.customId);
+                        console.log(`✅ Confirm clicked for ${selfbot.user.username}`);
+                    } catch (err) {
+                        console.error(`❌ Confirm click failed for ${selfbot.user.username}:`, err.message);
+                    }
+                } else {
+                    console.log(`❌ Confirm button not found for ${selfbot.user.username}`);
+                }
+
+            } else {
+                console.log(`❌ ${selfbot.user.username} has low balance or under reserve limit.`);
+            }
+        } catch (err) {
+            console.error(`❌ Error in .depo for ${selfbot.user.username}:`, err.message);
+        }
+
+        // Wait between bots
+        await new Promise(res => setTimeout(res, 3000));
+    }
+
+    return sendReply(msg, `✅ Ready for transfer`, isMainbot);
+}
+
+
     if (command === "joinbr") {
         const serverArg = args.find(a => a.startsWith("-s:"));
         const channelArg = args.find(a => a.startsWith("-c:"));
@@ -922,3 +1042,254 @@ const sendCaptchaLink = async (msg, url, selfbot = null) => {
     }
 
 };
+function formatNumberForDank(num) {
+    if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1).replace(/\.0$/, '') + 'B';
+    if (num >= 1_000_000) return (num / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (num >= 1_000) return (num / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return num.toString();
+}
+
+ // update with actual path
+
+mainBot.on('interactionCreate', async (interaction) => {
+  if (interaction.user.id !== testInitiatorId) {
+    return interaction.reply({
+      content: "Buddy, You are not him.",
+      ephemeral: true
+    });
+  }
+
+  // 1. SERVER SELECTED
+  if (interaction.isStringSelectMenu() && interaction.customId === 'select_mutual_guild') {
+    const selectedGuildId = interaction.values[0];
+    const mutual = cachedMutuals.find(g => g.id === selectedGuildId);
+    if (!mutual) {
+      return interaction.reply({ content: "❌ Server not found in cache." });
+    }
+
+    try {
+      const guild = scannerClient.guilds.cache.get(selectedGuildId);
+      if (!guild) throw new Error('Guild not found in selfbot cache.');
+      const dankMember = await guild.members.fetch(DANK_ID);
+
+      const textChannels = Array.from(guild.channels.cache.values())
+        .filter(channel =>
+          channel.type === `GUILD_TEXT` &&
+          channel.viewable &&
+          channel.permissionsFor(dankMember)?.has([
+           // PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+           // PermissionFlagsBits.UseApplicationCommands
+          ])
+        )
+        .map(channel => ({
+          label: channel.name.slice(0, 90),
+          value: channel.id
+        }));
+
+      if (textChannels.length === 0) {
+        return interaction.reply({ content: "❌ No usable channels found." });
+      }
+
+      const channelRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`select_any_channel:${selectedGuildId}`)
+          .setPlaceholder('Select a channel')
+          .addOptions(textChannels.slice(0, 25))
+      );
+
+      await interaction.update({
+        content: `✅ Selected server: **${mutual.name}**\n📡 Now choose a channel:`,
+        components: [channelRow]
+      });
+
+    } catch (err) {
+      console.error("❌ Error reading channels:", err.message);
+      return interaction.reply({ content: "❌ Failed to read channels." });
+    }
+  }
+
+  // 2. CHANNEL SELECTED
+  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('select_any_channel')) {
+    const selectedChannelId = interaction.values[0];
+    const selectedGuildId = interaction.customId.split(':')[1];
+
+    interaction.client._scanData ??= {};
+    interaction.client._scanData[interaction.user.id] = { guildId: selectedGuildId, channelId: selectedChannelId };
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('scan_bank')
+        .setLabel('🏦 Bank')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('scan_pocket')
+        .setLabel('👛 Pocket')
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await interaction.update({
+      content: `✅ Channel: <#${selectedChannelId}>\n🔘 Now select a leaderboard type:`,
+      components: [row]
+    });
+  }
+
+  // 3. SELECT LEADERBOARD TYPE
+  if (interaction.isButton() && (interaction.customId === 'scan_bank' || interaction.customId === 'scan_pocket')) {
+    try {
+      const userData = interaction.client._scanData?.[interaction.user.id];
+      if (!userData) {
+        return interaction.reply({ content: '❌ Missing selection context.', ephemeral: true });
+      }
+
+      const { guildId, channelId } = userData;
+      const li = interaction.customId === 'scan_bank' ? 'Bank' : 'Pocket';
+      interaction.client._scanData[interaction.user.id].li = li;
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('threshold_2m').setLabel('2m').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('threshold_10m').setLabel('10m').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('threshold_30m').setLabel('30m').setStyle(ButtonStyle.Secondary)
+      );
+
+      const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('threshold_50m').setLabel('50m').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('threshold_75m').setLabel('75m').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('threshold_100m').setLabel('100m').setStyle(ButtonStyle.Secondary)
+      );
+
+      await interaction.update({
+        content: `💰 Select the minimum coin threshold to rob:`,
+        components: [row, row2]
+      });
+
+    } catch (err) {
+      console.error("❌ Error in leaderboard button:", err);
+      if (!interaction.replied) {
+        await interaction.reply({ content: '❌ Failed to process leaderboard selection.', ephemeral: true });
+      }
+    }
+  }
+
+  // 4. THRESHOLD SELECTED
+  if (interaction.isButton() && interaction.customId.startsWith('threshold_')) {
+    try {
+      const userData = interaction.client._scanData?.[interaction.user.id];
+      if (!userData || !userData.li) {
+        return interaction.reply({ content: '❌ Missing context for scanning.', ephemeral: true });
+      }
+
+      const { guildId, channelId, li } = userData;
+      const thresholdText = interaction.customId.split('_')[1];
+      const threshold = parseInt(thresholdText.replace('m', '')) * 1_000_000;
+
+      const cancelRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('cancel_scan')
+          .setLabel('❌ Cancel Scan')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      const statusMsg = await interaction.update({
+        content: `📊 Starting **${li}** leaderboard scan with rob filter: **≥ ${thresholdText}**`,
+        components: [cancelRow]
+      }).then(() => interaction.fetchReply());
+
+      runFullScan(guildId, channelId, li, 1, threshold, statusMsg, interaction.user.id);
+
+
+    } catch (err) {
+      console.error("❌ Error in threshold selection:", err);
+      if (!interaction.replied) {
+        await interaction.reply({ content: '❌ Failed to start scan.', ephemeral: true });
+      }
+    }
+  }
+
+  // 5. CANCEL SCAN
+if (interaction.isButton() && interaction.customId === 'cancel_scan') {
+  const userData = interaction.client._scanData?.[interaction.user.id];
+  if (!userData || !userData.guildId || !userData.channelId) {
+    return interaction.reply({
+      content: '⚠️ Cannot cancel — no active scan context found.',
+      ephemeral: true
+    });
+  }
+
+  const { guildId, channelId } = userData;
+
+  const cancelled = cancelScan(guildId, channelId);
+  if (cancelled) {
+    await interaction.update({
+      content: '🛑 Cancelling scan...',
+      components: []
+    });
+  } else {
+    await interaction.update({
+      content: '⚠️ No active scan was found for this channel.',
+      components: []
+    });
+  }
+}
+
+});
+
+
+
+mainBot.on('messageCreate', async (msg) => {
+    if (msg.author.bot || !msg.content.startsWith(prefix)) return;
+            const data = await getAdminData();
+            const isAdmin = data.admins.includes(msg.author.id);
+            if (!isAdmin) return;
+  const args = msg.content.slice(prefix.length).trim().split(/ +/);
+  const command = args.shift()?.toLowerCase();
+
+  if (command === 'scan') {
+    const mutuals = [];
+testInitiatorId = msg.author.id;
+   for (const guild of scannerClient.guilds.cache.values()) {
+
+      try {
+        const member = await guild.members.fetch(DANK_ID);
+        if (member) mutuals.push({ name: guild.name, id: guild.id });
+      } catch {
+        // Dank not found or not visible
+      }
+    }
+
+    if (mutuals.length === 0) {
+      return msg.reply("❌ No mutual servers with Dank Memer.");
+    }
+
+    cachedMutuals = mutuals; // cache for dropdown logic
+
+    const options = mutuals.slice(0, 25).map(guild => {
+      let label = guild.name;
+      if (label.length > 30) {
+        label = `${label.slice(0, 30)}(${guild.id.slice(-2)})`;
+      }
+      return {
+        label,
+        value: guild.id
+      };
+    });
+
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('select_mutual_guild')
+        .setPlaceholder('Select a Dank Memer server')
+        .addOptions(options)
+    );
+
+    try {
+      await msg.channel.send({
+        content: '📜 **Select a mutual Dank Memer server:**',
+        components: [row]
+        });
+
+      console.log(`✅ Bot sent server selection to channel: ${msg.channel.id}`);
+    } catch (err) {
+      console.error("❌ Failed to send select menu via bot:", err.message);
+    }
+  }
+});
