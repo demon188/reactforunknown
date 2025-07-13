@@ -333,7 +333,7 @@ scannerClient.login(process.env.SCANNER_TOKEN)
   .catch(err => console.error("❌ Scanner selfbot login failed:", err));
 
 const { setScannerClient, runFullScan, cancelScan } = require('./roblister');
-setScannerClient(scannerClient, mainBot); // inject client
+ // inject client
 
 const userTokens = [];
 for (let i = 1; i <= 12; i++) {
@@ -387,7 +387,7 @@ mainBot.login(process.env.BOT_TOKEN)
  .then(() => console.log(`🤖 Logged in as ${mainBot.user.tag}`))
   .catch(err => console.error("❌ Main bot login failed:", err));
 
-
+setScannerClient(scannerClient, mainBot);
 const userClients = [];
 
 (async () => {
