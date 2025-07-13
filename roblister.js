@@ -4,12 +4,25 @@ require('dotenv').config();
 
 const DANK_ID = '270904126974590976';
 
+
+
 let scannerClient;
 let mainBot;
 const activeScans = new Map(); // Track running scans by guildId:channelId
 
 const ignoredUserIds = new Set([
-    // Add any ignored user IDs here
+    '1386079772521533451',
+    '1386074841320526050',
+    '1386084166889635880',
+    '1386083090153345125',
+    '1386093184177668150',
+    '1386094110498361444',
+    '1386086622117892267',
+    '1386077382406045816',
+    '1386090476477743254',
+    '1386078633134915685',
+    '1386071595482878082',
+    '1386095515170770954'
 ]);
 
 async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statusMsg = null) {
