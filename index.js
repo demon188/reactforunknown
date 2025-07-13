@@ -3,6 +3,7 @@ const {
     Client,
     GatewayIntentBits,
     Partials,
+    Collection,
     PermissionsBitField,
     Client: BotClient,
       ActionRowBuilder,
@@ -20,7 +21,6 @@ const path = require('path');
 const fetch = (...args) => import('node-fetch').then(({
     default: fetch
 }) => fetch(...args));
-
 
 const DANK_ID = '270904126974590976';
 let testInitiatorId = null;
@@ -418,7 +418,7 @@ const userClients = [];
                 return tokenData.token;
             },
             TOTPKey: null,
-            makeCache: () => new Map(), // 💡 disables cache
+           makeCache: () => createLimitedCache(25),
             checkUpdate: false
         });
 
@@ -1311,3 +1311,14 @@ setInterval(() => {
  // console.log("🧹 Cleared Discord.js caches");
 }, 10 * 60 * 1000); // every 10 minutes
 
+function createLimitedCache(limit = 25) {
+  const coll = new Collection();
+  coll.set = ((originalSet => function (key, value) {
+    if (coll.size >= limit && !coll.has(key)) {
+      const firstKey = coll.firstKey();
+      if (firstKey !== undefined) coll.delete(firstKey);
+    }
+    return originalSet.call(this, key, value);
+  })(coll.set));
+  return coll;
+}
