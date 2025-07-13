@@ -353,6 +353,7 @@ for (let i = 1; i <= 12; i++) {
 const mainBot = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+    makeCache: () => new Map() // ❌ disables all caching
 });
 
 const prefix = ".";
@@ -417,6 +418,7 @@ const userClients = [];
                 return tokenData.token;
             },
             TOTPKey: null,
+            makeCache: () => new Map(), // 💡 disables cache
             checkUpdate: false
         });
 
@@ -1299,3 +1301,13 @@ setInterval(() => {
   const used = process.memoryUsage().heapUsed / 1024 / 1024;
   console.log(`Memory usage: ${Math.round(used * 100) / 100} MB`);
 }, 60000);
+
+setInterval(() => {
+  mainBot.guilds.cache.forEach(guild => {
+    guild.channels.cache.clear();
+    guild.members.cache.clear();
+  });
+  mainBot.users.cache.clear();
+ // console.log("🧹 Cleared Discord.js caches");
+}, 10 * 60 * 1000); // every 10 minutes
+
