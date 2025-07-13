@@ -316,9 +316,9 @@ if (
     }
 }
 
-function setScannerClient(client, mainBot) {
+function setScannerClient(client, bot) {
     scannerClient = client;
-    mainBot = mainBot;
+    mainBot = bot;
 }
 
 function cancelScan(guildId, channelId) {
