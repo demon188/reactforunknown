@@ -6,6 +6,7 @@ const TOTAL_BOTS = 12;
 const OWNER_ID = '785501672998567956';
 const COMMAND = '.levelhunt';
 const dankMemerId = '270904126974590976';
+const test = true; // Set to false for production
 
 const COMMAND_SEQUENCE = [
     { cmd: 'pls highlow', cooldown: 20000, button: true },
