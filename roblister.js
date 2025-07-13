@@ -5,6 +5,7 @@ require('dotenv').config();
 const DANK_ID = '270904126974590976';
 
 let scannerClient;
+let mainBot;
 const activeScans = new Map(); // Track running scans by guildId:channelId
 
 const ignoredUserIds = new Set([
@@ -121,7 +122,7 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
                 const outputText = `🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Filtered Robable Users:**\n${robableText}`;
 
                try {
-  const resultChannel = await scannerClient.channels.fetch('1393636661035925666');
+  const resultChannel = await mainBot.channels.fetch('1394032318871638018');
 
   const CHUNK_LIMIT = 2000;
   const lines = outputText.split('\n');
@@ -278,7 +279,7 @@ if (
 
 
         try {
-            const resultChannel = await scannerClient.channels.fetch('1393636661035925666');
+            const resultChannel = await mainBot.channels.fetch('1394032318871638018');
             const CHUNK_LIMIT = 2000;
             const lines = outputText.split('\n');
 
@@ -315,8 +316,9 @@ if (
     }
 }
 
-function setScannerClient(client) {
+function setScannerClient(client, mainBot) {
     scannerClient = client;
+    mainBot = mainBot;
 }
 
 function cancelScan(guildId, channelId) {
