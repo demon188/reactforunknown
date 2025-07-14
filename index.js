@@ -26,6 +26,7 @@ const DANK_ID = '270904126974590976';
 const allowedChannelForPirates = '1394032318871638018'; // Channel where pirates can use commands
 let testInitiatorId = null;
 let cachedMutuals = [];
+const pageCache = new Map(); // maps userId to { pages: [...], pageIndex }
 const BOT_OUTPUT_CHANNEL = '1386432193617989735'; // 👈 Set this to your bot's control channel
 const express = require('express');
 const app = express();
@@ -1258,59 +1259,71 @@ mainBot.on('interactionCreate', async (interaction) => {
   }
 
   // 1. SERVER SELECTED
-  if (interaction.isStringSelectMenu() && interaction.customId === 'select_mutual_guild') {
-    const selectedGuildId = interaction.values[0];
-    const mutual = cachedMutuals.find(g => g.id === selectedGuildId);
-    if (!mutual) {
-      return interaction.reply({ content: "❌ Server not found in cache." });
-    }
+if (
+  interaction.isStringSelectMenu() &&
+  interaction.customId.startsWith('select_mutual_guild_page_')
+) {
+  const selectedGuildId = interaction.values[0];
+  console.log(selectedGuildId)
+  const state = pageCache.get(interaction.user.id);
+  const allMutuals = state?.pages.flat() || [];
 
-    try {
-      const guild = scannerClient.guilds.cache.get(selectedGuildId);
-      if (!guild) throw new Error('Guild not found in selfbot cache.');
-      const dankMember = await guild.members.fetch(DANK_ID);
-
-      const textChannels = Array.from(guild.channels.cache.values())
-        .filter(channel =>
-          channel.type === `GUILD_TEXT` &&
-          channel.viewable && (
-          channel.permissionsFor(dankMember)?.has([
-           // PermissionFlagsBits.ViewChannel,
-            //PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.UseApplicationCommands
-          ]) || 
-          channel.permissionsFor(dankMember)?.has([
-           // PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            //PermissionFlagsBits.UseApplicationCommands
-          ]))
-        ) 
-        .map(channel => ({
-          label: channel.name.slice(0, 90),
-          value: channel.id
-        }));
-
-      if (textChannels.length === 0) {
-        return interaction.reply({ content: "❌ No usable channels found." });
-      }
-
-      const channelRow = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`select_any_channel:${selectedGuildId}`)
-          .setPlaceholder('Select a channel')
-          .addOptions(textChannels.slice(0, 25))
-      );
-
-      await interaction.update({
-        content: `✅ Selected server: **${mutual.name}**\n📡 Now choose a channel:`,
-        components: [channelRow]
-      });
-
-    } catch (err) {
-      console.error("❌ Error reading channels:", err.message);
-      return interaction.reply({ content: "❌ Failed to read channels." });
-    }
+  const mutual = allMutuals.find(g => g.id === selectedGuildId);
+  if (!mutual) {
+    return interaction.reply({
+      content: "❌ Server not found in cache.",
+      ephemeral: true
+    });
   }
+
+  try {
+    const guild = scannerClient.guilds.cache.get(selectedGuildId);
+    if (!guild) throw new Error('Guild not found in selfbot cache.');
+
+    const dankMember = await guild.members.fetch(DANK_ID);
+
+    const textChannels = Array.from(guild.channels.cache.values())
+      .filter(channel =>
+        channel.type === `GUILD_TEXT` &&
+        channel.viewable &&
+        (
+          channel.permissionsFor(dankMember)?.has(PermissionFlagsBits.UseApplicationCommands) ||
+          channel.permissionsFor(dankMember)?.has(PermissionFlagsBits.SendMessages)
+        )
+      )
+      .map(channel => ({
+        label: channel.name.slice(0, 90),
+        value: channel.id
+      }));
+
+    if (textChannels.length === 0) {
+      return interaction.reply({
+        content: "❌ No usable channels found.",
+        ephemeral: true
+      });
+    }
+
+    const channelRow = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`select_any_channel:${selectedGuildId}`)
+        .setPlaceholder('Select a channel')
+        .addOptions(textChannels.slice(0, 25)) // limit to 25
+    );
+
+    await interaction.update({
+      content: `✅ Selected server: **${mutual.name}**\n📡 Now choose a channel:`,
+      components: [channelRow]
+    });
+
+  } catch (err) {
+    console.error("❌ Error reading channels:", err.message);
+    return interaction.reply({
+      content: "❌ Failed to read channels.",
+      ephemeral: true
+    });
+  }
+}
+
 
   // 2. CHANNEL SELECTED
   if (interaction.isStringSelectMenu() && interaction.customId.startsWith('select_any_channel')) {
@@ -1461,54 +1474,114 @@ mainBot.on('messageCreate', async (msg) => {
   const args = msg.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
-  if (command === 'scan') {
-    const mutuals = [];
-testInitiatorId = msg.author.id;
-   for (const guild of scannerClient.guilds.cache.values()) {
+if (command === 'scan') {
+  const mutuals = [];
+  testInitiatorId = msg.author.id;
 
-      try {
-        const member = await guild.members.fetch(DANK_ID);
-        if (member) mutuals.push({ name: guild.name, id: guild.id });
-      } catch {
-        // Dank not found or not visible
-      }
-    }
+  for (const guild of scannerClient.guilds.cache.values()) {
+    try {
+      const member = await guild.members.fetch(DANK_ID);
+      if (member) mutuals.push({ name: guild.name, id: guild.id });
+    } catch {}
+  }
 
-    if (mutuals.length === 0) {
-      return msg.reply("❌ No mutual servers with Dank Memer.");
-    }
+  if (mutuals.length === 0) {
+    return msg.reply("❌ No mutual servers with Dank Memer.");
+  }
 
-    cachedMutuals = mutuals; // cache for dropdown logic
+  // Split into pages of 25
+  const pages = [];
+  for (let i = 0; i < mutuals.length; i += 25) {
+    pages.push(mutuals.slice(i, i + 25));
+  }
 
-    const options = mutuals.slice(0, 25).map(guild => {
-      let label = guild.name;
-      if (label.length > 30) {
-        label = `${label.slice(0, 30)}(${guild.id.slice(-2)})`;
-      }
-      return {
-        label,
-        value: guild.id
-      };
-    });
+  pageCache.set(msg.author.id, { pages, pageIndex: 0 });
 
-    const row = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId('select_mutual_guild')
-        .setPlaceholder('Select a Dank Memer server')
-        .addOptions(options)
+  const createMenuForPage = (pageIndex) => {
+    const options = pages[pageIndex].map(guild => ({
+      label: guild.name.length > 30 ? guild.name.slice(0, 30) + "..." : guild.name,
+      value: guild.id
+    }));
+
+    const selectMenu = new StringSelectMenuBuilder()
+      .setCustomId(`select_mutual_guild_page_${pageIndex}`)
+      .setPlaceholder(`Page ${pageIndex + 1} of ${pages.length}`)
+      .addOptions(options);
+
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('prev_page')
+        .setLabel('⬅ Prev')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(pageIndex === 0),
+      new ButtonBuilder()
+        .setCustomId('next_page')
+        .setLabel('Next ➡')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(pageIndex === pages.length - 1)
     );
 
-    try {
-      await msg.channel.send({
-        content: '📜 **Select a mutual Dank Memer server:**',
-        components: [row]
-        });
+    return {
+      components: [new ActionRowBuilder().addComponents(selectMenu), buttons]
+    };
+  };
 
-      console.log(`✅ Bot sent server selection to channel: ${msg.channel.id}`);
-    } catch (err) {
-      console.error("❌ Failed to send select menu via bot:", err.message);
-    }
-  }
+  const page = createMenuForPage(0);
+
+  await msg.channel.send({
+    content: '📜 **Select a mutual Dank Memer server:**',
+    components: page.components
+  });
+}
+
+});
+
+mainBot.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+  if (interaction.user.id !== testInitiatorId) {
+    return interaction.reply({
+      content: "Buddy, You are not him.",
+      ephemeral: true
+    })}
+
+  const { user } = interaction;
+  const state = pageCache.get(user.id);
+  if (!state) return;
+
+  if (interaction.customId === "next_page") {
+    state.pageIndex++;
+  } else if (interaction.customId === "prev_page") {
+    state.pageIndex--;
+  } else return;
+
+  const { pageIndex, pages } = state;
+
+  const options = pages[pageIndex].map(guild => ({
+    label: guild.name.length > 40 ? guild.name.slice(0, 40) + "..." : guild.name,
+    value: guild.id
+  }));
+
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId(`select_mutual_guild_page_${pageIndex}`)
+    .setPlaceholder(`Page ${pageIndex + 1} of ${pages.length}`)
+    .addOptions(options);
+
+  const buttons = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('prev_page')
+      .setLabel('⬅ Prev')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(pageIndex === 0),
+    new ButtonBuilder()
+      .setCustomId('next_page')
+      .setLabel('Next ➡')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(pageIndex === pages.length - 1)
+  );
+
+  await interaction.update({
+    components: [new ActionRowBuilder().addComponents(selectMenu), buttons]
+  });
 });
 
 setInterval(() => {
