@@ -133,7 +133,7 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
                     .filter(Boolean)
                     .join('\n') || 'No robable users found.';
 
-                const outputText = `🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Filtered Robable Users:**\n${robableText}`;
+                const outputText = `<@&1394390804713439365> \n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Filtered Robable Users:**\n${robableText}`;
 
                try {
   const resultChannel = await mainBot.channels.fetch(BOT_OUTPUT_CHANNEL);
@@ -289,7 +289,7 @@ if (
             .filter(Boolean)
             .join('\n') || 'No robable users found.';
 
-        const outputText = `🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Robbed Before Cancel:**\n${robableText}`;
+        const outputText = `<@&1394390804713439365> \n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Robbed Before Cancel:**\n${robableText}`;
 
 
         try {
