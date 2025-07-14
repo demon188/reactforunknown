@@ -23,6 +23,7 @@ const fetch = (...args) => import('node-fetch').then(({
 }) => fetch(...args));
 
 const DANK_ID = '270904126974590976';
+const allowedChannelForPirates = '1394032318871638018'; // Channel where pirates can use commands
 let testInitiatorId = null;
 let cachedMutuals = [];
 const BOT_OUTPUT_CHANNEL = '1386432193617989735'; // 👈 Set this to your bot's control channel
@@ -527,7 +528,13 @@ if (scannerClient) {
     const isAdmin = data.admins.includes(msg.author.id);
     const isPiratePermitted = await isPirateAllowed(msg.author.id, 'join');
 
-    if (!isAdmin && !isPiratePermitted) return;
+ if (
+  !isAdmin &&
+  (
+    msg.channel.id !== allowedChannelForPirates ||
+    !isPiratePermitted
+  )
+) return;
 
     try {
       const channel = await msg.channel.fetch();
@@ -1189,7 +1196,13 @@ mainBot.on("messageCreate", async (msg) => {
     const isAdmin = data.admins.includes(msg.author.id);
     const isPiratePermitted = await isPirateAllowed(msg.author.id, commandName);
 
-    if (!isAdmin && !isPiratePermitted) return;
+ if (
+  !isAdmin &&
+  (
+    msg.channel.id !== allowedChannelForPirates ||
+    !isPiratePermitted
+  )
+) return;
 
     try {
         await commands(msg, data, true);
@@ -1425,7 +1438,14 @@ mainBot.on('messageCreate', async (msg) => {
     const isAdmin = data.admins.includes(msg.author.id);
     const isPiratePermitted = await isPirateAllowed(msg.author.id, commandName);
 
-    if (!isAdmin && !isPiratePermitted) return;
+   // if (!isAdmin && !isPiratePermitted) return;
+    if (
+  !isAdmin &&
+  (
+    msg.channel.id !== allowedChannelForPirates ||
+    !isPiratePermitted
+  )
+) return;
 
   const args = msg.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
