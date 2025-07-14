@@ -194,6 +194,14 @@ const ensureAdminData = async () => {
 const AfkSchema = new mongoose.Schema({ afkadmin: [String] });
 const AfkData = mongoose.model("AfkData", AfkSchema);
 
+const PirateSchema = new mongoose.Schema({
+  pirates: [{
+    userid: String,
+    allowedCommands: [String]
+  }]
+});
+const PirateData = mongoose.model("PirateData", PirateSchema);
+
 const FollowSchema = new mongoose.Schema({ followadmins: [{ userid: String, count: Number }] });
 const FollowData = mongoose.model("FollowData", FollowSchema);
 
@@ -257,6 +265,12 @@ const getAfkUsers = async () => {
   const data = await AfkData.findOne();
   return data?.afkadmin || [];
 };
+
+const ensurePirateData = async () => {
+  const exists = await PirateData.findOne();
+  if (!exists) await PirateData.create({ pirates: [] });
+};
+ensurePirateData();
 
 // Call once on bot start
 ensureAfkData();
@@ -322,6 +336,48 @@ const setEveryoneTracking = async (status) => {
     data.everyone = status;
     await saveAdminData(data);
 };
+//pirate data functions
+const getPirateData = async () => await PirateData.findOne();
+const savePirateData = async (data) => await data.save();
+
+const addPirate = async (userid) => {
+  const data = await getPirateData();
+  if (!data.pirates.some(p => p.userid === userid)) {
+    data.pirates.push({ userid, allowedCommands: [] });
+    await savePirateData(data);
+  }
+};
+
+const removePirate = async (userid) => {
+  const data = await getPirateData();
+  data.pirates = data.pirates.filter(p => p.userid !== userid);
+  await savePirateData(data);
+};
+
+const enablePirateCommand = async (userid, command) => {
+  const data = await getPirateData();
+  const pirate = data.pirates.find(p => p.userid === userid);
+  if (pirate && !pirate.allowedCommands.includes(command)) {
+    pirate.allowedCommands.push(command);
+    await savePirateData(data);
+  }
+};
+
+const disablePirateCommand = async (userid, command) => {
+  const data = await getPirateData();
+  const pirate = data.pirates.find(p => p.userid === userid);
+  if (pirate) {
+    pirate.allowedCommands = pirate.allowedCommands.filter(c => c !== command);
+    await savePirateData(data);
+  }
+};
+
+const isPirateAllowed = async (userid, command) => {
+  const data = await getPirateData();
+  const pirate = data.pirates.find(p => p.userid === userid);
+  return !!(pirate && pirate.allowedCommands.includes(command));
+};
+
 
 console.log("🔍 Loading tokens from .env...\n");
 
@@ -418,7 +474,7 @@ const userClients = [];
                 return tokenData.token;
             },
             TOTPKey: null,
-           makeCache: () => createLimitedCache(25),
+            makeCache: () => createLimitedCache(150, '270904126974590976'),
             checkUpdate: false
         });
 
@@ -456,6 +512,71 @@ const userClients = [];
   }
     });
 };
+//join bankrob
+
+
+if (scannerClient) {
+  scannerClient.on("messageCreate", async (msg) => {
+    if (msg.author.bot || msg.content.trim().toLowerCase() !== 'join') return;
+
+    console.log("Join bankrob command received");
+
+    if (!msg.reference?.messageId) return; // Not a reply
+
+    const data = await getAdminData();
+    const isAdmin = data.admins.includes(msg.author.id);
+    const isPiratePermitted = await isPirateAllowed(msg.author.id, 'join');
+
+    if (!isAdmin && !isPiratePermitted) return;
+
+    try {
+      const channel = await msg.channel.fetch();
+      const repliedMsg = await channel.messages.fetch(msg.reference.messageId);
+      //console.dir(repliedMsg.toJSON(),{ depth: null }); // Log the replied message for debugging
+
+      // ✅ Check: Message from Dank Memer + is slash command
+      if (
+        repliedMsg.author.id !== DANK_ID ||
+        repliedMsg.type !== 'APPLICATION_COMMAND'
+      ) return;
+
+      const components = repliedMsg.components;
+      if (!components || components.length === 0) return;
+      const joinBtn = repliedMsg.components?.flatMap(c => c.components)
+      .find(b => b.label?.toLowerCase().includes("join bankrob") && !b.disabled);
+      //console.log(joinBtn);
+      if (joinBtn.disabled) return;
+
+ 
+ for (const selfbot of userClients) {
+            try {
+             //   const guild = await selfbot.guilds.fetch(repliedMsg.guildId);
+                const channel = await selfbot.channels.fetch(repliedMsg.channelId);
+                const message = await channel.messages.fetch(repliedMsg.id);
+                await message.clickButton(joinBtn.customId);
+
+            } catch (err) {
+                console.error(`❌ Failed for ${selfbot.user.username}: ${err.message}`);
+            }
+        }
+// ✅ Send joined message from main bot
+try {
+  const outputChannel = await mainBot.channels.fetch("1386432193617989735").catch(() => null);
+  if (outputChannel?.isTextBased?.()) {
+    await outputChannel.send("✅ JOINED ALL OF THEM");
+  }
+} catch (e) {
+  console.error("❌ Failed to send output message:", e.message);
+}
+    } catch (err) {
+      console.error('❌ Error fetching replied message:', err.message);
+    }
+  });
+  
+}
+
+
+
 
     const selfbot2 = userClients[2];
     if (selfbot2) {
@@ -571,10 +692,6 @@ async function commands(msg, data, isMainbot = false) {
    → Change global name (nickname visible in all servers)
 • \`.pfp <selfbot_user_id>\` (reply to image)  
    → Change profile picture of a selfbot
-
-💰 **Bankrob Button Joiner**
-• \`.joinbr -s:<server_id> -c:<channel_id> -m:<message_id>\`  
-   → All selfbots click the **JOIN BANKROB** button in a message
 
 💀 **Skull Tracker**
 • \`.skull @user(s)/<id(s)>\` — Start tracking their messages
@@ -844,6 +961,54 @@ if (command === "depo") {
     return sendReply(msg, `✅ Ready for transfer`, isMainbot);
 }
 
+if (command === "pirate") {
+ const [_, action, userId, commandName] = msg.content.trim().split(/\s+/);
+//if (!userId) return msg.reply('❌ Provide user ID');
+
+  if (action === 'add') {
+    await addPirate(userId);
+    msg.reply(`✅ Added pirate <@${userId}>`);
+  } else if (action === 'remove') {
+    await removePirate(userId);
+    msg.reply(`🗑️ Removed pirate <@${userId}>`);
+  } else if (action === 'enable') {
+    if (!commandName) return msg.reply('❌ Provide command to enable');
+    await enablePirateCommand(userId, commandName);
+    msg.reply(`✅ Enabled \`${commandName}\` for pirate <@${userId}>`);
+  } else if (action === 'disable') {
+    if (!commandName) return msg.reply('❌ Provide command to disable');
+    await disablePirateCommand(userId, commandName);
+    msg.reply(`🚫 Disabled \`${commandName}\` for pirate <@${userId}>`);
+  } else if (action === 'list') {
+
+    const data = await getPirateData();
+  if (!data || data.pirates.length === 0) {
+    return msg.reply('🧭 No pirates found.');
+  }
+
+  const lines = await Promise.all(data.pirates.map(async pirate => {
+    const userTag = await mainBot.users.fetch(pirate.userid)
+      .then(user => `${user.username}#${user.discriminator}`)
+      .catch(() => pirate.userid); // fallback to ID if user not cached or fetch fails
+
+    const commands = pirate.allowedCommands.length > 0
+      ? pirate.allowedCommands.join(', ')
+      : '🚫 No commands enabled';
+
+    return `🦜 **${userTag}**\n   └─ ${commands}`;
+  }));
+
+  const chunked = splitMessage(lines.join('\n'), 2000);
+  for (const chunk of chunked) msg.reply(chunk);
+
+  } else {
+    msg.reply('❌ Invalid pirate action. Use `add`, `remove`, `enable`, or `disable`.');
+  }
+
+
+
+
+}
 
     if (command === "joinbr") {
         const serverArg = args.find(a => a.startsWith("-s:"));
@@ -1017,17 +1182,23 @@ await fullMsg.clickButton(confirmBtn.customId);
 }
 mainBot.on("messageCreate", async (msg) => {
     if (msg.author.bot || !msg.content.startsWith(prefix)) return;
+
+    const commandName = msg.content.trim().split(/\s+/)[0]; // e.g. `.command`
     const data = await getAdminData();
+
     const isAdmin = data.admins.includes(msg.author.id);
-    if (!isAdmin) return;
+    const isPiratePermitted = await isPirateAllowed(msg.author.id, commandName);
+
+    if (!isAdmin && !isPiratePermitted) return;
+
     try {
         await commands(msg, data, true);
     } catch (err) {
         console.error("Command error:", err.message);
-        msg.reply(`❌ Error executing command: `);
+        msg.reply(`❌ Error executing command.`);
     }
-
 });
+
 
 const sendCaptchaLink = async (msg, url, selfbot = null) => {
     try {
@@ -1078,13 +1249,18 @@ mainBot.on('interactionCreate', async (interaction) => {
       const textChannels = Array.from(guild.channels.cache.values())
         .filter(channel =>
           channel.type === `GUILD_TEXT` &&
-          channel.viewable &&
+          channel.viewable && (
+          channel.permissionsFor(dankMember)?.has([
+           // PermissionFlagsBits.ViewChannel,
+            //PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.UseApplicationCommands
+          ]) || 
           channel.permissionsFor(dankMember)?.has([
            // PermissionFlagsBits.ViewChannel,
             PermissionFlagsBits.SendMessages,
-           // PermissionFlagsBits.UseApplicationCommands
-          ])
-        )
+            //PermissionFlagsBits.UseApplicationCommands
+          ]))
+        ) 
         .map(channel => ({
           label: channel.name.slice(0, 90),
           value: channel.id
@@ -1240,10 +1416,17 @@ if (interaction.isButton() && interaction.customId === 'cancel_scan') {
 
 
 mainBot.on('messageCreate', async (msg) => {
-    if (msg.author.bot || !msg.content.startsWith(prefix)) return;
-            const data = await getAdminData();
-            const isAdmin = data.admins.includes(msg.author.id);
-            if (!isAdmin) return;
+    
+     if (msg.author.bot || !msg.content.startsWith(prefix)) return;
+
+    const commandName = msg.content.trim().split(/\s+/)[0]; // e.g. `.command`
+    const data = await getAdminData();
+
+    const isAdmin = data.admins.includes(msg.author.id);
+    const isPiratePermitted = await isPirateAllowed(msg.author.id, commandName);
+
+    if (!isAdmin && !isPiratePermitted) return;
+
   const args = msg.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
@@ -1311,14 +1494,46 @@ setInterval(() => {
  // console.log("🧹 Cleared Discord.js caches");
 }, 10 * 60 * 1000); // every 10 minutes
 
-function createLimitedCache(limit = 25) {
+
+function createLimitedCache(limit = 100, dankId = '270904126974590976') {
   const coll = new Collection();
-  coll.set = ((originalSet => function (key, value) {
-    if (coll.size >= limit && !coll.has(key)) {
-      const firstKey = coll.firstKey();
-      if (firstKey !== undefined) coll.delete(firstKey);
+  const originalSet = coll.set;
+
+  coll.set = function (key, value) {
+    // If value is a message and from Dank Memer, keep always
+    const isDankMemerMsg = value?.author?.id === dankId;
+
+    if (coll.size >= limit && !coll.has(key) && !isDankMemerMsg) {
+      // Prefer removing first non-Dank item
+      const firstNonDankKey = coll.findKey(v => v?.author?.id !== dankId);
+      if (firstNonDankKey !== undefined) {
+        coll.delete(firstNonDankKey);
+      } else {
+        // fallback if all entries are Dank Memer
+        coll.delete(coll.firstKey());
+      }
     }
+
     return originalSet.call(this, key, value);
-  })(coll.set));
+  };
+
   return coll;
 }
+
+function splitMessage(text, maxLength = 2000) {
+  const chunks = [];
+  let current = '';
+
+  for (const line of text.split('\n')) {
+    if ((current + '\n' + line).length > maxLength) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current += (current ? '\n' : '') + line;
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+

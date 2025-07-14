@@ -3,6 +3,7 @@ const path = require('path');
 require('dotenv').config();
 
 const DANK_ID = '270904126974590976';
+const BOT_OUTPUT_CHANNEL = '1394385252180426762'; // Channel to send results
 
 
 
@@ -135,7 +136,7 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
                 const outputText = `🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Filtered Robable Users:**\n${robableText}`;
 
                try {
-  const resultChannel = await mainBot.channels.fetch('1394032318871638018');
+  const resultChannel = await mainBot.channels.fetch(BOT_OUTPUT_CHANNEL);
 
   const CHUNK_LIMIT = 2000;
   const lines = outputText.split('\n');
@@ -292,7 +293,7 @@ if (
 
 
         try {
-            const resultChannel = await mainBot.channels.fetch('1394032318871638018');
+            const resultChannel = await mainBot.channels.fetch(BOT_OUTPUT_CHANNEL);
             const CHUNK_LIMIT = 2000;
             const lines = outputText.split('\n');
 
