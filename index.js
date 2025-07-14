@@ -542,10 +542,7 @@ if (scannerClient) {
 
  if (
   !isAdmin &&
-  (
-    msg.channel.id !== allowedChannelForPirates ||
     !isPiratePermitted
-  )
 ) return;
 
     try {
@@ -1264,7 +1261,6 @@ if (
   interaction.customId.startsWith('select_mutual_guild_page_')
 ) {
   const selectedGuildId = interaction.values[0];
-  console.log(selectedGuildId)
   const state = pageCache.get(interaction.user.id);
   const allMutuals = state?.pages.flat() || [];
 
