@@ -163,8 +163,6 @@ const RESTART_FILE = './restart.json';
 
 // MongoDB Setup
 mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
   serverSelectionTimeoutMS: 30000, // Wait up to 30 seconds for initial server response
   socketTimeoutMS: 45000           // Close sockets after 45 seconds of inactivity
 })
