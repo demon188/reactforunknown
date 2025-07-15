@@ -34,6 +34,25 @@ const port = process.env.PORT || 4000;
 const port2 = process.env.PORT2 || 3000;
 
 
+
+
+// MongoDB Setup
+mongoose.connect(process.env.MONGO_URI, {
+  dbName: "test",
+  serverSelectionTimeoutMS: 30000, // Wait up to 30 seconds for initial server response
+  socketTimeoutMS: 45000,           // Close sockets after 45 seconds of inactivity
+  connectTimeoutMS: 30000 // <== Add this
+})
+.then(() => console.log("✅ Connected to MongoDB Atlas"))
+.catch(err => console.error("❌ MongoDB connection error:", err));
+
+mongoose.connection.on('connected', () => {
+  console.log("✅ Mongoose connected");
+});
+mongoose.connection.on('error', err => {
+  console.error("❌ Mongoose error:", err);
+});
+
 // Serve static files and parse JSON
 app.use(express.json());
 app.use(express.urlencoded({
@@ -162,22 +181,7 @@ app.listen(port, () => {
 
 const RESTART_FILE = './restart.json';
 
-// MongoDB Setup
-mongoose.connect(process.env.MONGO_URI, {
-  dbName: "test",
-  serverSelectionTimeoutMS: 30000, // Wait up to 30 seconds for initial server response
-  socketTimeoutMS: 45000,           // Close sockets after 45 seconds of inactivity
-  connectTimeoutMS: 30000 // <== Add this
-})
-.then(() => console.log("✅ Connected to MongoDB Atlas"))
-.catch(err => console.error("❌ MongoDB connection error:", err));
 
-mongoose.connection.on('connected', () => {
-  console.log("✅ Mongoose connected");
-});
-mongoose.connection.on('error', err => {
-  console.error("❌ Mongoose error:", err);
-});
 const AdminSchema = new mongoose.Schema({
     _id: {
         type: String,
