@@ -208,11 +208,25 @@ mongoose.connection.on('error', err => {
   console.error("❌ Mongoose error:", err);
 });
 
+const dankChannelSchema = new mongoose.Schema({
+  guildId: { type: String, required: true, unique: true },
+  channelId: { type: String, required: true }
+});
 
+const DankChannel = mongoose.model('DankChannel', dankChannelSchema);
 
+async function updateDankChannel(guildId, channelId) {
+  await DankChannel.findOneAndUpdate(
+    { guildId },
+    { channelId },
+    { upsert: true, new: true }
+  );
+}
 
-
-
+async function getChannelFromDB(guildId) {
+  const doc = await DankChannel.findOne({ guildId });
+  return doc?.channelId || null;
+}
 const AdminSchema = new mongoose.Schema({
     _id: {
         type: String,
@@ -711,6 +725,16 @@ async function commands(msg, data, isMainbot = false) {
         return sendReply(msg, `✅ Added admin: ${id}`, isMainbot);
     }
 
+    if (command === "update") {
+  const guildId = args[0];
+  const channelId = args[1];
+
+  if (!guildId || !channelId) {
+    return msg.reply("❌ Usage: `.update <guildId> <channelId>`");
+  }
+  await updateDankChannel(guildId, channelId);
+  return sendReply(msg, `✅ Updated rob channel for server \`${guildId}\`: <#${channelId}>`, isMainbot);
+}
     if (command === "checktokens") {
         const statuses = userClients.map((c, i) => `✅ User ${i + 1}: ${c.user.username}`);
         return sendReply(msg, "🧾 Token status:\n" + statuses.join("\n"), isMainbot);
@@ -1292,6 +1316,7 @@ if (
   const state = pageCache.get(interaction.user.id);
   const allMutuals = state?.pages.flat() || [];
 
+ 
   const mutual = allMutuals.find(g => g.id === selectedGuildId);
   if (!mutual) {
     return interaction.reply({
@@ -1300,59 +1325,14 @@ if (
     });
   }
 
-  try {
-    const guild = scannerClient.guilds.cache.get(selectedGuildId);
-    if (!guild) throw new Error('Guild not found in selfbot cache.');
-
-    const dankMember = await guild.members.fetch(DANK_ID);
-
-    const textChannels = Array.from(guild.channels.cache.values())
-      .filter(channel =>
-        channel.type === `GUILD_TEXT` &&
-        channel.viewable &&
-        (
-          channel.permissionsFor(dankMember)?.has(PermissionFlagsBits.UseApplicationCommands) ||
-          channel.permissionsFor(dankMember)?.has(PermissionFlagsBits.SendMessages)
-        )
-      )
-      .map(channel => ({
-        label: channel.name.slice(0, 90),
-        value: channel.id
-      }));
-
-    if (textChannels.length === 0) {
-      return interaction.reply({
-        content: "❌ No usable channels found.",
-        ephemeral: true
-      });
-    }
-
-    const channelRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`select_any_channel:${selectedGuildId}`)
-        .setPlaceholder('Select a channel')
-        .addOptions(textChannels.slice(0, 25)) // limit to 25
-    );
-
-    await interaction.update({
-      content: `✅ Selected server: **${mutual.name}**\n📡 Now choose a channel:`,
-      components: [channelRow]
-    });
-
-  } catch (err) {
-    console.error("❌ Error reading channels:", err.message);
-    return interaction.reply({
-      content: "❌ Failed to read channels.",
-      ephemeral: true
-    });
-  }
+   // const channelId = await getChannelFromDB(selectedGuildId);
+    const selectedChannelId = await getChannelFromDB(selectedGuildId)
+     if (!selectedChannelId) {
+  return interaction.update({
+    content: `❌ No rob-channel configured for **${mutual.name}**.\nUse \`.update ${selectedGuildId} <channelId>\` to set one first.`,
+    components: []
+  });
 }
-
-
-  // 2. CHANNEL SELECTED
-  if (interaction.isStringSelectMenu() && interaction.customId.startsWith('select_any_channel')) {
-    const selectedChannelId = interaction.values[0];
-    const selectedGuildId = interaction.customId.split(':')[1];
 
     interaction.client._scanData ??= {};
     interaction.client._scanData[interaction.user.id] = { guildId: selectedGuildId, channelId: selectedChannelId };
