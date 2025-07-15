@@ -36,22 +36,6 @@ const port2 = process.env.PORT2 || 3000;
 
 
 
-// MongoDB Setup
-mongoose.connect(process.env.MONGO_URI, {
-  dbName: "test",
-  serverSelectionTimeoutMS: 30000, // Wait up to 30 seconds for initial server response
-  socketTimeoutMS: 45000,           // Close sockets after 45 seconds of inactivity
-  connectTimeoutMS: 30000 // <== Add this
-})
-.then(() => console.log("✅ Connected to MongoDB Atlas"))
-.catch(err => console.error("❌ MongoDB connection error:", err));
-
-mongoose.connection.on('connected', () => {
-  console.log("✅ Mongoose connected");
-});
-mongoose.connection.on('error', err => {
-  console.error("❌ Mongoose error:", err);
-});
 
 // Serve static files and parse JSON
 app.use(express.json());
@@ -180,6 +164,52 @@ app.listen(port, () => {
 });
 
 const RESTART_FILE = './restart.json';
+
+const scannerClient = new SelfbotClient.Client({
+    checkUpdate: false
+});
+
+const mainBot = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+    makeCache: () => new Map() // ❌ disables all caching
+});
+
+// MongoDB Setup
+mongoose.connect(process.env.MONGO_URI, {
+  dbName: "test",
+  serverSelectionTimeoutMS: 30000, // Wait up to 30 seconds for initial server response
+  socketTimeoutMS: 45000,           // Close sockets after 45 seconds of inactivity
+  connectTimeoutMS: 30000 // <== Add this
+})
+.then(async () => {
+  console.log("✅ MongoDB connected");
+
+  // SAFE: Start login and events now
+mainBot.login(process.env.BOT_TOKEN)
+ .then(() => console.log(`🤖 Logged in as ${mainBot.user.tag}`))
+  .catch(err => console.error("❌ Main bot login failed:", err));
+
+  scannerClient.login(process.env.SCANNER_TOKEN)
+  .then(() => console.log(`🟡 Scanner Selfbot (${scannerClient.user.username}) is ready.`))
+  .catch(err => console.error("❌ Scanner selfbot login failed:", err));
+
+
+
+
+  })
+.catch(err => console.error("❌ MongoDB connection error:", err));
+
+mongoose.connection.on('connected', () => {
+  console.log("✅ Mongoose connected");
+});
+mongoose.connection.on('error', err => {
+  console.error("❌ Mongoose error:", err);
+});
+
+
+
+
 
 
 const AdminSchema = new mongoose.Schema({
@@ -398,12 +428,6 @@ const isPirateAllowed = async (userid, command) => {
 
 console.log("🔍 Loading tokens from .env...\n");
 
-const scannerClient = new SelfbotClient.Client({
-    checkUpdate: false
-});
-scannerClient.login(process.env.SCANNER_TOKEN)
-  .then(() => console.log(`🟡 Scanner Selfbot (${scannerClient.user.username}) is ready.`))
-  .catch(err => console.error("❌ Scanner selfbot login failed:", err));
 
 const { setScannerClient, runFullScan, cancelScan } = require('./roblister');
  // inject client
@@ -423,11 +447,7 @@ for (let i = 1; i <= 12; i++) {
     }
 }
 
-const mainBot = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
-    makeCache: () => new Map() // ❌ disables all caching
-});
+
 
 const prefix = ".";
 let skullActive = false;
@@ -456,11 +476,9 @@ mainBot.once('ready', async () => {
     }
 });
 
-mainBot.login(process.env.BOT_TOKEN)
- .then(() => console.log(`🤖 Logged in as ${mainBot.user.tag}`))
-  .catch(err => console.error("❌ Main bot login failed:", err));
 
-setScannerClient(scannerClient, mainBot);
+
+
 const userClients = [];
 
 (async () => {
@@ -503,6 +521,7 @@ const userClients = [];
             console.error(`Login failed: ${err.message}`);
         }
     }
+    setScannerClient(scannerClient, mainBot);
     const selfbot0 = userClients[0];
   if (selfbot0) {
     selfbot0.on("messageCreate", async (msg) => {

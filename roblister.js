@@ -251,6 +251,7 @@ if (
     !lower.includes('passive') &&
     !lower.includes('lottery') &&
     !lower.includes('not a member') &&
+    !lower.includes('you must pass captcha') &&
     !lower.includes('hey stupid') &&
     !lower.includes('unable to interact')
 ) {
