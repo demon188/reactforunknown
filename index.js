@@ -1329,7 +1329,7 @@ if (
     const selectedChannelId = await getChannelFromDB(selectedGuildId)
      if (!selectedChannelId) {
   return interaction.update({
-    content: `❌ No rob-channel configured for **${mutual.name}**.\nUse \`.update ${selectedGuildId} <channelId>\` to set one first.`,
+    content: `❌ No rob-channel configured for \n**${mutual.name}**.\nUse:  \n\`.update ${selectedGuildId} <channelId>\``,
     components: []
   });
 }
