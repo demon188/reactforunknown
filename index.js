@@ -26,6 +26,7 @@ const DANK_ID = '270904126974590976';
 const allowedChannelForPirates = '1394032318871638018'; // Channel where pirates can use commands
 let testInitiatorId = null;
 let cachedMutuals = [];
+const cooldowns = new Map(); 
 const pageCache = new Map(); // maps userId to { pages: [...], pageIndex }
 const BOT_OUTPUT_CHANNEL = '1386432193617989735'; // 👈 Set this to your bot's control channel
 const express = require('express');
@@ -567,7 +568,10 @@ if (scannerClient) {
   !isAdmin &&
     !isPiratePermitted
 ) return;
-
+ const now = Date.now();
+ const lastUsed = cooldowns.get(`join`) || 0;
+ if (now - lastUsed < 60 * 1000) return;
+ 
     try {
       const channel = await msg.channel.fetch();
       const repliedMsg = await channel.messages.fetch(msg.reference.messageId);
@@ -599,6 +603,7 @@ if (scannerClient) {
             }
         }
 // ✅ Send joined message from main bot
+cooldowns.set(`join`, now);
 try {
   const outputChannel = await mainBot.channels.fetch("1386432193617989735").catch(() => null);
   if (outputChannel?.isTextBased?.()) {

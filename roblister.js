@@ -5,36 +5,82 @@ require('dotenv').config();
 const DANK_ID = '270904126974590976';
 const BOT_OUTPUT_CHANNEL = '1394385252180426762'; // Channel to send results
 
-
-
 let scannerClient;
 let mainBot;
 const activeScans = new Map(); // Track running scans by guildId:channelId
 
 const ignoredUserIds = new Set([
-    '1386079772521533451',
-    '1386074841320526050',
-    '1386084166889635880',
-    '1386083090153345125',
-    '1386093184177668150',
-    '1386094110498361444',
-    '1386086622117892267',
-    '1386077382406045816',
-    '1386090476477743254',
-    '1386078633134915685',
-    '1386071595482878082',
-    '1386095515170770954'
+    '1386079772521533451', '1386074841320526050', '1386084166889635880',
+    '1386083090153345125', '1386093184177668150', '1386094110498361444',
+    '1386086622117892267', '1386077382406045816', '1386090476477743254',
+    '1386078633134915685', '1386071595482878082', '1386095515170770954'
 ]);
 
 async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statusMsg = null) {
     li = li.toLowerCase();
+
+    const statusData = {
+        page: 1,
+        totalPages: 1,
+        found: 0,
+        current: 0,
+        total: 0,
+        state: 'Initializing...'
+    };
+
+    let guildName = 'Unknown';
+    let robType = li === 'bank' ? 'Bank' : 'Pocket';
+
+    async function updateStatus() {
+        if (!statusMsg) return;
+        const content = `**Robbing Scan Status:\n**\u0060\u0060\u0060js\nServer: ${guildName}\nRob Type: ${robType}\nFilter: ≥ ${threshold / 1_000_000}M\nInterval: ${inv}s\n\nPages collected: ${statusData.page}\nUser IDs Found: ${statusData.found}\nStatus: ${statusData.state}\n\u0060\u0060\u0060`;
+        try {
+            await statusMsg.edit({ content });
+        } catch (err) {
+            console.warn('⚠️ Failed to update status message:', err.message);
+        }
+    }
+
+    async function finalizeStatus(text) {
+        if (statusMsg) {
+            try {
+                await statusMsg.edit({ content: text, components: [] });
+            } catch (e) {
+                console.warn('⚠️ Failed to finalize status message:', e.message);
+            }
+        }
+    }
+
+    async function sendRobResults(robableUsers, title) {
+        try {
+            const resultChannel = await mainBot.channels.fetch(BOT_OUTPUT_CHANNEL);
+            const robableText = robableUsers.map(u => u.line).filter(Boolean).join('\n') || 'No robable users found.';
+            const outputText = `<@&1394390804713439365>\n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${robType}** ≥ ${threshold / 1_000_000}m.\n📋 **${title}:**\n${robableText}`;
+
+            const CHUNK_LIMIT = 2000;
+            const lines = outputText.split('\n');
+            let currentChunk = '';
+            for (const line of lines) {
+                if ((currentChunk + line + '\n').length > CHUNK_LIMIT) {
+                    await resultChannel.send(currentChunk);
+                    currentChunk = '';
+                }
+                currentChunk += line + '\n';
+            }
+            if (currentChunk.trim().length > 0) {
+                await resultChannel.send(currentChunk);
+            }
+        } catch (err) {
+            console.warn('⚠️ Failed to send robable list to BOT_OUTPUT_CHANNEL:', err.message);
+        }
+    }
+
     const scanKey = `${guildId}:${channelId}`;
     activeScans.set(scanKey, { cancelled: false });
 
     console.log(`▶️ Robbing strategy: ${li} | Interval: ${inv}s | Threshold: ${threshold}`);
-
     const guild = scannerClient.guilds.cache.get(guildId);
-    const guildName = guild?.name;
+    guildName = guild?.name || guildName;
     if (!guild) return console.error('❌ Guild not found.');
 
     const channel = guild.channels.cache.get(channelId);
@@ -44,9 +90,14 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
         const capitalizedLi = li.charAt(0).toUpperCase() + li.slice(1);
         console.log(`📤 Sending slash command: /leaderboard stats ${li}`);
 
-        const slashMsg = await channel.sendSlash(DANK_ID, 'leaderboard stats', capitalizedLi);
+        statusData.state = 'Slash command sent...';
+        await updateStatus();
 
-        if (activeScans.get(scanKey)?.cancelled) return cancelCleanup();
+        const slashMsg = await channel.sendSlash(DANK_ID, 'leaderboard stats', capitalizedLi);
+        if (activeScans.get(scanKey)?.cancelled) {
+            await finalizeStatus('🚫 Scan cancelled.');
+            return;
+        }
 
         let responseMsg;
         if (slashMsg.flags?.has?.('LOADING')) {
@@ -75,7 +126,10 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
         let msg = responseMsg;
 
         while (msg) {
-            if (activeScans.get(scanKey)?.cancelled) return cancelCleanup();
+            if (activeScans.get(scanKey)?.cancelled) {
+                await finalizeStatus('🚫 Scan cancelled.');
+                return;
+            }
 
             const embed = msg.embeds[0];
             const description = embed.description || '';
@@ -92,7 +146,6 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
                 const userId = match?.[1];
                 const coinMatch = line.match(/`?\s*([\d,]+)\s*`?/);
                 const coinValue = coinMatch ? parseInt(coinMatch[1].replace(/,/g, '')) : 0;
-
                 if (userId && !ignoredUserIds.has(userId) && coinValue >= threshold) {
                     userLineMap.set(userId, line);
                 }
@@ -108,7 +161,10 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
 
             try {
                 await msg.clickButton(nextBtn.customId);
-               // console.log('➡️ Clicked ArrowRightui (next page)');
+                statusData.page++;
+                statusData.state = `Reading leaderboard page ${statusData.page}`;
+                await updateStatus();
+
                 await new Promise(res => setTimeout(res, 4000));
                 msg = await channel.messages.fetch(msg.id);
             } catch (err) {
@@ -122,145 +178,39 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
         let index = 0;
         let repeatCount = 0;
 
+        statusData.found = userIds.length;
+        statusData.total = userIds.length;
+        statusData.state = 'Robbing started...';
+        await updateStatus();
+
         const robNext = async () => {
-            if (activeScans.get(scanKey)?.cancelled) return cancelCleanup();
+            if (activeScans.get(scanKey)?.cancelled) {
+                await sendRobResults(robableUsers, 'Robbed Before Cancel');
+                await finalizeStatus('🚫 Scan cancelled.');
+                activeScans.delete(scanKey);
+                return;
+            }
 
             if ((li === 'p' && index >= userIds.length && repeatCount === 0) || (li !== 'p' && index >= userIds.length)) {
-                console.log('✅ Finished robbing.');
-                
-                const robableText = robableUsers
-                    .map(u => u.line)
-                    .filter(Boolean)
-                    .join('\n') || 'No robable users found.';
-
-                const outputText = `<@&1394390804713439365> \n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Filtered Robable Users:**\n${robableText}`;
-
-               try {
-  const resultChannel = await mainBot.channels.fetch(BOT_OUTPUT_CHANNEL);
-
-  const CHUNK_LIMIT = 2000;
-  const lines = outputText.split('\n');
-
-  let currentChunk = '';
-  for (const line of lines) {
-    // +1 accounts for the newline character we're adding back
-    if ((currentChunk + line + '\n').length > CHUNK_LIMIT) {
-      await resultChannel.send(currentChunk);
-      currentChunk = '';
-    }
-    currentChunk += line + '\n';
-  }
-
-  if (currentChunk.trim().length > 0) {
-    await resultChannel.send(currentChunk);
-  }
-
-  console.log('✅ Sent robable user list (in clean chunks).');
-} catch (err) {
-  console.warn('⚠️ Failed to send robable list:', err.message);
-}
-
-
-                if (statusMsg) {
-                try {
-                    await statusMsg.edit({
-                    content: `✅ Scan completed in **${guildName}**!\n\nFound **${robableUsers.length}** robbable users for **${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.`,
-                    components: []
-                    });
-                } catch (e) {
-                    console.warn('⚠️ Failed to edit status message:', e.message);
-                }
-                }
-
+                statusData.state = '✅ Scan completed!';
+                await updateStatus();
+                await sendRobResults(robableUsers, 'Filtered Robable Users');
+                await finalizeStatus(`✅ Scan completed in **${guildName}**. Found **${robableUsers.length}** robbable users for **${robType}** ≥ ${threshold / 1_000_000}m.`);
                 activeScans.delete(scanKey);
                 return;
             }
 
             const userId = userIds[index];
-            if (!userId) {
-                index++;
-                repeatCount = 0;
-                return setTimeout(robNext, inv * 1000);
-            }
+            statusData.current = index + 1;
+            statusData.state = `Checking user ${statusData.current}/${statusData.total}`;
+            await updateStatus();
 
             try {
                 const slashMsg = await channel.sendSlash(DANK_ID, 'rob', userId);
-                let finalMessage;
-
-                if (slashMsg.flags?.has?.('LOADING')) {
-                    finalMessage = await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => reject('❌ Timeout after 15 seconds'), 15000);
-                        const listener = (oldMsg, newMsg) => {
-                            if (oldMsg.id === slashMsg.id && newMsg.author.id === DANK_ID) {
-                                clearTimeout(timeout);
-                                scannerClient.off('messageUpdate', listener);
-                                resolve(newMsg);
-                            }
-                        };
-                        scannerClient.on('messageUpdate', listener);
-                    });
-                } else {
-                    finalMessage = slashMsg;
+                const lower = (slashMsg.content || '').toLowerCase();
+                if (!lower.includes('passive') && !lower.includes('lottery') && !lower.includes('not a member') && !lower.includes('you must pass captcha') && !lower.includes('hey stupid') && !lower.includes('unable to interact')) {
+                    robableUsers.push({ id: userId, line: userLineMap.get(userId) });
                 }
-
-                let fullTextContent = '';
-                if (finalMessage.content) fullTextContent += finalMessage.content + ' ';
-                if (finalMessage.embeds?.length) {
-                    const embed = finalMessage.embeds[0];
-                    if (embed.description) fullTextContent += embed.description + ' ';
-                    if (embed.fields?.length) {
-                        embed.fields.forEach(f => {
-                            fullTextContent += ` ${f.name} ${f.value} `;
-                        });
-                    }
-                }
-                if (finalMessage.components?.length) {
-                    finalMessage.components.forEach(row => {
-                        if (row.components?.length) {
-                            row.components.forEach(comp => {
-                                if (comp?.content) {
-                                    fullTextContent += comp.content + ' \n';
-                                } else if (comp?.label) {
-                                    fullTextContent += comp.label + ' \n';
-                                } else if (comp?.custom_id) {
-                                    fullTextContent += `[Component ID: ${comp.custom_id}] \n`;
-                                }
-                            });
-                        }
-                    });
-                }
-
-
-               const lower = fullTextContent.toLowerCase();
-
-if (lower.includes('robbing is disabled') || lower.includes('rob protection')) {
-    console.warn(`🚫 Robbing disabled detected. Cancelling scan.`);
-    activeScans.delete(scanKey);
-    if (statusMsg) {
-        try {
-            await statusMsg.edit({
-                content: '❌ Scan cancelled — Robbing is disabled in this server.',
-                components: []
-            });
-        } catch (_) {}
-    }
-    return;
-}
-
-if (
-    !lower.includes('passive') &&
-    !lower.includes('lottery') &&
-    !lower.includes('not a member') &&
-    !lower.includes('you must pass captcha') &&
-    !lower.includes('hey stupid') &&
-    !lower.includes('unable to interact')
-) {
-    robableUsers.push({ id: userId, line: userLineMap.get(userId) });
-}
-
-
-
-              //  console.log(`📤 Sent rob for <@${userId}> (${li === 'p' ? `${repeatCount + 1}/5` : '1'})`);
             } catch (err) {
                 console.warn(`❌ Failed rob for ${userId}:`, err.message);
             }
@@ -279,51 +229,6 @@ if (
         };
 
         robNext();
-
-      async function cancelCleanup() {
-    console.log('🚫 Scan cancelled.');
-    activeScans.delete(scanKey);
-
-    if (robableUsers.length > 0) {
-        const robableText = robableUsers
-            .map(u => u.line)
-            .filter(Boolean)
-            .join('\n') || 'No robable users found.';
-
-        const outputText = `<@&1394390804713439365> \n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${li === 'bank' ? 'Bank' : 'Pocket'}** ≥ ${threshold / 1_000_000}m.\n📋 **Robbed Before Cancel:**\n${robableText}`;
-
-
-        try {
-            const resultChannel = await mainBot.channels.fetch(BOT_OUTPUT_CHANNEL);
-            const CHUNK_LIMIT = 2000;
-            const lines = outputText.split('\n');
-
-            let currentChunk = '';
-            for (const line of lines) {
-                if ((currentChunk + line + '\n').length > CHUNK_LIMIT) {
-                    await resultChannel.send(currentChunk);
-                    currentChunk = '';
-                }
-                currentChunk += line + '\n';
-            }
-
-            if (currentChunk.trim().length > 0) {
-                await resultChannel.send(currentChunk);
-            }
-
-            console.log('✅ Sent partial rob list before cancellation.');
-        } catch (err) {
-            console.warn('⚠️ Failed to send partial rob list:', err.message);
-        }
-    }
-
-    if (statusMsg) {
-        try {
-            await statusMsg.edit({ content: '🚫 Scan cancelled.', components: [] });
-        } catch (_) {}
-    }
-}
-
 
     } catch (err) {
         console.error('❌ Fatal error in scan:', err);
