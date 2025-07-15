@@ -1660,3 +1660,34 @@ function splitMessage(text, maxLength = 2000) {
   return chunks;
 }
 
+process.on('unhandledRejection', async (reason, promise) => {
+    console.error('⚠️ Unhandled Rejection:', reason);
+    await sendErrorToLogChannel('🟠 Unhandled Rejection', reason);
+});
+
+process.on('uncaughtException', async (err) => {
+    console.error('🔴 Uncaught Exception:', err);
+    await sendErrorToLogChannel('🔴 Uncaught Exception', err);
+});
+
+process.on('uncaughtExceptionMonitor', async (err) => {
+    console.error('🟡 Exception Monitor:', err);
+    await sendErrorToLogChannel('🟡 Exception Monitor', err);
+});
+
+async function sendErrorToLogChannel(title, error) {
+    try {
+        const logChannelId = '1394686686004510882'; // replace with your actual log channel
+        const errorChannel = await mainBot.channels.fetch(logChannelId);
+
+        const content = `**${title}**\n\`\`\`js\n${String(error?.stack || error)}\n\`\`\``;
+
+        // Truncate if too long
+        const chunks = content.match(/[\s\S]{1,1900}/g) || [];
+        for (const chunk of chunks) {
+            await errorChannel.send(chunk);
+        }
+    } catch (sendErr) {
+        console.error('❌ Failed to send error to log channel:', sendErr);
+    }
+}
