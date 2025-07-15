@@ -510,7 +510,7 @@ const userClients = [];
                 return tokenData.token;
             },
             TOTPKey: null,
-            makeCache: () => createLimitedCache(150, '270904126974590976'),
+            makeCache: () => createLimitedCache(70, '270904126974590976'),
             checkUpdate: false
         });
 

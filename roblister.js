@@ -25,6 +25,7 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
         found: 0,
         current: 0,
         total: 0,
+        robable: 0,
         state: 'Initializing...'
     };
 
@@ -33,7 +34,7 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
 
     async function updateStatus() {
         if (!statusMsg) return;
-        const content = `**Robbing Scan Status:\n**\u0060\u0060\u0060js\nServer: ${guildName}\nRob Type: ${robType}\nFilter: ≥ ${threshold / 1_000_000}M\nInterval: ${inv}s\n\nPages collected: ${statusData.page}\nUser IDs Found: ${statusData.found}\nStatus: ${statusData.state}\n\u0060\u0060\u0060`;
+        const content = `**Robbing Scan Status:\n**\u0060\u0060\u0060js\nServer: ${guildName}\nRob Type: ${robType}\nFilter: ≥ ${threshold / 1_000_000}M\nInterval: ${inv}s\n\nPages collected: ${statusData.page}\nUser IDs Found: ${statusData.found}\nRobable Users: ${statusData.robable}\nStatus: ${statusData.state}\n\u0060\u0060\u0060`;
         try {
             await statusMsg.edit({ content });
         } catch (err) {
@@ -205,15 +206,63 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
             statusData.state = `Checking user ${statusData.current}/${statusData.total}`;
             await updateStatus();
 
+         
             try {
                 const slashMsg = await channel.sendSlash(DANK_ID, 'rob', userId);
-                const lower = (slashMsg.content || '').toLowerCase();
+
+                // Collect all possible content sources
+                let fullTextContent = '';
+                if (slashMsg.content) fullTextContent += slashMsg.content + ' ';
+                if (slashMsg.embeds?.length) {
+                    const embed = slashMsg.embeds[0];
+                    if (embed.description) fullTextContent += embed.description + ' ';
+                    if (embed.fields?.length) {
+                        embed.fields.forEach(f => {
+                            fullTextContent += ` ${f.name} ${f.value} `;
+                        });
+                    }
+                }
+                if (slashMsg.components?.length) {
+                    slashMsg.components.forEach(row => {
+                        if (row.components?.length) {
+                            row.components.forEach(comp => {
+                                if (comp?.content) {
+                                    fullTextContent += comp.content + ' \n';
+                                } else if (comp?.label) {
+                                    fullTextContent += comp.label + ' \n';
+                                } else if (comp?.custom_id) {
+                                    fullTextContent += `[Component ID: ${comp.custom_id}] \n`;
+                                }
+                            });
+                        }
+                    });
+                }
+
+                const lower = fullTextContent.toLowerCase();
+
+                // Cancel scan if robbing is disabled
+                if (lower.includes('robbing is disabled') || lower.includes('rob protection')) {
+                    console.warn('🚫 Robbing disabled detected. Cancelling scan.');
+                    activeScans.delete(scanKey);
+                    if (statusMsg) {
+                        try {
+                            await statusMsg.edit({
+                                content: '❌ Scan cancelled — Robbing is disabled in this server.',
+                                components: []
+                            });
+                        } catch (_) {}
+                    }
+                    return;
+                }
+
                 if (!lower.includes('passive') && !lower.includes('lottery') && !lower.includes('not a member') && !lower.includes('you must pass captcha') && !lower.includes('hey stupid') && !lower.includes('unable to interact')) {
                     robableUsers.push({ id: userId, line: userLineMap.get(userId) });
+                    statusData.robable = robableUsers.length;
                 }
             } catch (err) {
                 console.warn(`❌ Failed rob for ${userId}:`, err.message);
             }
+
 
             if (li === 'p') {
                 repeatCount++;
