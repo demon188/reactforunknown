@@ -1503,7 +1503,7 @@ if (command === 'scan') {
 
   const createMenuForPage = (pageIndex) => {
     const options = pages[pageIndex].map(guild => ({
-      label: guild.name.length > 30 ? guild.name.slice(0, 30) + "..." : guild.name,
+      label: guild.name.length > 80 ? guild.name.slice(0, 80) + "..." : guild.name,
       value: guild.id
     }));
 
