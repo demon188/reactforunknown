@@ -86,7 +86,7 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
             currentChunk += line + '\n';
         }
         if (currentChunk.trim().length > 0) {
-            await resultChannel.send(currentChunk);
+            await resultChannel.send({ content: currentChunk, components: [row] });
         }
     } catch (err) {
         console.warn('⚠️ Failed to send robable list to output channel:', err.message);
