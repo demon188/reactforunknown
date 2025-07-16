@@ -75,7 +75,7 @@ const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
         .setLabel('Jump to the target Channel')
         .setEmoji('💰')
-        .setStyle(ButtonStyle.link)
+        .setStyle(ButtonStyle.Link)
         .setURL(channelUrl)
 );
 
