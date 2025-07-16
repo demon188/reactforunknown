@@ -4,8 +4,10 @@ require('dotenv').config();
 
 const DANK_ID = '270904126974590976';
 const BOT_OUTPUT_CHANNEL_BANK = '1394385252180426762'; // Channel to send results
-const BOT_OUTPUT_CHANNEL_POCKET = '1394943078728470528'; // Channel to send results
-const { MessageActionRow, MessageButton } = require('discord.js');
+const BOT_OUTPUT_CHANNEL_POCKET =  '1394943078728470528'; // Channel to send results
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+
+
 let scannerClient;
 let mainBot;
 const activeScans = new Map(); // Track running scans by guildId:channelId
@@ -67,14 +69,16 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
         .join('\n') || 'No robable users found.';
 
         const outputText = `<@&1394390804713439365>\n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${robType}** ≥ ${threshold / 1_000_000}m.\n📋 **${title}:**\n${robableText}`;
-        const channelUrl = `https://discord.com/channels/${guildId}/${channelId}`;
+const channelUrl = `https://discord.com/channels/${guildId}/${channelId}`;
 
-        const row = new MessageActionRow().addComponents(
-            new MessageButton()
-                .setLabel('🔪 View Channel')
-                .setStyle('LINK')
-                .setURL(channelUrl)
-        );
+const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+        .setLabel('Jump to the target Channel')
+        .setEmoji('💰')
+        .setStyle(ButtonStyle.link)
+        .setURL(channelUrl)
+);
+
         const CHUNK_LIMIT = 2000;
         const lines = outputText.split('\n');
         let currentChunk = '';
