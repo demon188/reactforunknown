@@ -3,8 +3,8 @@ const path = require('path');
 require('dotenv').config();
 
 const DANK_ID = '270904126974590976';
-const BOT_OUTPUT_CHANNEL = '1394385252180426762'; // Channel to send results
-
+const BOT_OUTPUT_CHANNEL_BANK = '1394385252180426762'; // Channel to send results
+const BOT_OUTPUT_CHANNEL_POCKET = '1394943078728470528'; // Channel to send results
 let scannerClient;
 let mainBot;
 const activeScans = new Map(); // Track running scans by guildId:channelId
@@ -52,29 +52,38 @@ async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statu
         }
     }
 
+    
     async function sendRobResults(robableUsers, title) {
-        try {
-            const resultChannel = await mainBot.channels.fetch(BOT_OUTPUT_CHANNEL);
-            const robableText = robableUsers.map(u => u.line).filter(Boolean).join('\n') || 'No robable users found.';
-            const outputText = `<@&1394390804713439365>\n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${robType}** ≥ ${threshold / 1_000_000}m.\n📋 **${title}:**\n${robableText}`;
+    try {
+        const robChannelId = robType.toLowerCase() === 'bank' ? BOT_OUTPUT_CHANNEL_BANK : BOT_OUTPUT_CHANNEL_POCKET;
+        const resultChannel = await mainBot.channels.fetch(robChannelId);
 
-            const CHUNK_LIMIT = 2000;
-            const lines = outputText.split('\n');
-            let currentChunk = '';
-            for (const line of lines) {
-                if ((currentChunk + line + '\n').length > CHUNK_LIMIT) {
-                    await resultChannel.send(currentChunk);
-                    currentChunk = '';
-                }
-                currentChunk += line + '\n';
-            }
-            if (currentChunk.trim().length > 0) {
+        const emoji = robType.toLowerCase() === 'bank' ? ':bank:' : ':coin:';
+
+        const robableText = robableUsers
+        .map(u => u.line?.replace(/🔹/g, robType.toLowerCase() === 'bank' ? ':bank:' : ':coin:'))
+        .filter(Boolean)
+        .join('\n') || 'No robable users found.';
+
+        const outputText = `<@&1394390804713439365>\n🏷️ **Server:** ${guildName}\n🏴‍☠️ Rob type:** ${robType}** ≥ ${threshold / 1_000_000}m.\n📋 **${title}:**\n${robableText}`;
+
+        const CHUNK_LIMIT = 2000;
+        const lines = outputText.split('\n');
+        let currentChunk = '';
+        for (const line of lines) {
+            if ((currentChunk + line + '\n').length > CHUNK_LIMIT) {
                 await resultChannel.send(currentChunk);
+                currentChunk = '';
             }
-        } catch (err) {
-            console.warn('⚠️ Failed to send robable list to BOT_OUTPUT_CHANNEL:', err.message);
+            currentChunk += line + '\n';
         }
+        if (currentChunk.trim().length > 0) {
+            await resultChannel.send(currentChunk);
+        }
+    } catch (err) {
+        console.warn('⚠️ Failed to send robable list to output channel:', err.message);
     }
+}
 
     const scanKey = `${guildId}:${channelId}`;
     activeScans.set(scanKey, { cancelled: false });
