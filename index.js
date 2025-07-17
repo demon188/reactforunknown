@@ -18,6 +18,10 @@ const SelfbotClient = require('discord.js-selfbot-v13');
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
+const { handleClaimCommand } = require('./pockettrasfer');
+const { acceptMarketOffer } = require('./marketaccept');
+
+
 const fetch = (...args) => import('node-fetch').then(({
     default: fetch
 }) => fetch(...args));
@@ -1454,6 +1458,45 @@ if (interaction.isButton() && interaction.customId === 'cancel_scan') {
 
 });
 
+mainBot.on('interactionCreate', async interaction => {
+  if (!interaction.isModalSubmit()) return;
+
+  if (interaction.user.id !== testInitiatorId) {
+    return interaction.reply({
+      content: "Buddy, You are not him.",
+      ephemeral: true
+    });
+  }
+
+  if (interaction.customId.startsWith('market_id_input_')) {
+    // Extract botId and balance
+    const [,botId, balance, userId] = interaction.customId.split('_').slice(2);
+    const marketId = interaction.fields.getTextInputValue('market_id');
+
+    const selectedBot = userClients.find(bot => bot.user?.id === botId);
+    if (!selectedBot) {
+      return interaction.reply({
+        content: `❌ Bot not found.`,
+        ephemeral: true
+      });
+    }
+
+    try {
+      // Defer reply first!
+      await interaction.deferReply({ ephemeral: true });
+
+      // Wait for slash command to complete
+      const result = await acceptMarketOffer(selectedBot, scannerClient, marketId, interaction, userId, mainBot);
+
+    } catch (err) {
+      console.error('❌ Error in accepting market offer:', err);
+      await interaction.editReply({
+        content: `❌ Failed to accept market offer.`
+      });
+    }
+  }
+});
+
 
 
 mainBot.on('messageCreate', async (msg) => {
@@ -1478,6 +1521,14 @@ mainBot.on('messageCreate', async (msg) => {
   const args = msg.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
+if (command === 'payout') {
+ // Call the claim handler
+    testInitiatorId = msg.author.id;
+    const replyMsg = await msg.reply("🔍 fetching claimable bot...");
+    await handleClaimCommand(replyMsg, msg.author.id, mainBot, scannerClient, userClients);
+
+
+}
 if (command === 'scan') {
   const mutuals = [];
   testInitiatorId = msg.author.id;
