@@ -111,7 +111,7 @@ for (let attempt = 1; attempt <= 3; attempt++) {
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
                         .setCustomId('market_id')
-                        .setLabel('Sell Market ID :')
+                        .setLabel('Your Sell Market ID :')
                         .setStyle(TextInputStyle.Short)
                         .setMinLength(8)
                         .setMaxLength(8)

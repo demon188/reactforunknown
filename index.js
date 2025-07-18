@@ -27,7 +27,11 @@ const fetch = (...args) => import('node-fetch').then(({
 }) => fetch(...args));
 
 const DANK_ID = '270904126974590976';
-const allowedChannelForPirates = '1394032318871638018'; // Channel where pirates can use commands
+const allowedChannelForPirates = {
+  payout: '1394942124327305350',
+  any: '1394032318871638018'
+};
+
 let testInitiatorId = null;
 let cachedMutuals = [];
 const cooldowns = new Map(); 
@@ -420,7 +424,8 @@ const removePirate = async (userid) => {
   await savePirateData(data);
 };
 
-const enablePirateCommand = async (userid, command) => {
+const enablePirateCommand = async (userid, commandUnf) => {
+  const command = commandUnf.toLowerCase();
   const data = await getPirateData();
   const pirate = data.pirates.find(p => p.userid === userid);
   if (pirate && !pirate.allowedCommands.includes(command)) {
@@ -429,7 +434,8 @@ const enablePirateCommand = async (userid, command) => {
   }
 };
 
-const disablePirateCommand = async (userid, command) => {
+const disablePirateCommand = async (userid, commandunf) => {
+  const command = commandunf.toLowerCase();
   const data = await getPirateData();
   const pirate = data.pirates.find(p => p.userid === userid);
   if (pirate) {
@@ -438,7 +444,8 @@ const disablePirateCommand = async (userid, command) => {
   }
 };
 
-const isPirateAllowed = async (userid, command) => {
+const isPirateAllowed = async (userid, commandunf) => {
+  const command = commandunf.toLowerCase();
   const data = await getPirateData();
   const pirate = data.pirates.find(p => p.userid === userid);
   return !!(pirate && pirate.allowedCommands.includes(command));
@@ -1255,16 +1262,17 @@ await fullMsg.clickButton(confirmBtn.customId);
 mainBot.on("messageCreate", async (msg) => {
     if (msg.author.bot || !msg.content.startsWith(prefix)) return;
 
-    const commandName = msg.content.trim().split(/\s+/)[0]; // e.g. `.command`
+    const commandName = msg.content.trim().split(/\s+/)[0].toLowerCase(); // e.g. `.command`
     const data = await getAdminData();
 
     const isAdmin = data.admins.includes(msg.author.id);
     const isPiratePermitted = await isPirateAllowed(msg.author.id, commandName);
+    const allowedChannelId = allowedChannelForPirates[commandName] || allowedChannelForPirates['any'];
 
  if (
   !isAdmin &&
   (
-    msg.channel.id !== allowedChannelForPirates ||
+    msg.channel.id !== allowedChannelId ||
     !isPiratePermitted
   )
 ) return;
@@ -1490,9 +1498,11 @@ mainBot.on('interactionCreate', async interaction => {
 
     } catch (err) {
       console.error('❌ Error in accepting market offer:', err);
-      await interaction.editReply({
-        content: `❌ Failed to accept market offer.`
-      });
+       if (!interaction.replied) {
+    await interaction.editReply({
+      content: `❌ Error happened, btw check yout pocket.`
+    });
+  }
     }
   }
 });
@@ -1503,23 +1513,24 @@ mainBot.on('messageCreate', async (msg) => {
     
      if (msg.author.bot || !msg.content.startsWith(prefix)) return;
 
-    const commandName = msg.content.trim().split(/\s+/)[0]; // e.g. `.command`
+    const commandName = msg.content.trim().split(/\s+/)[0].toLowerCase(); // e.g. `.command`
     const data = await getAdminData();
 
     const isAdmin = data.admins.includes(msg.author.id);
     const isPiratePermitted = await isPirateAllowed(msg.author.id, commandName);
+    const allowedChannelId = allowedChannelForPirates[commandName] || allowedChannelForPirates['any'];
 
    // if (!isAdmin && !isPiratePermitted) return;
-    if (
+  if (
   !isAdmin &&
   (
-    msg.channel.id !== allowedChannelForPirates ||
+    msg.channel.id !== allowedChannelId ||
     !isPiratePermitted
   )
 ) return;
 
   const args = msg.content.slice(prefix.length).trim().split(/ +/);
-  const command = args.shift()?.toLowerCase();
+  const command = args.shift().toLowerCase(); // e.g. `command`
 
 if (command === 'payout') {
  // Call the claim handler

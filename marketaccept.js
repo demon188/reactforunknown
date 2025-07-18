@@ -1,7 +1,7 @@
 const DANK_ID = '270904126974590976';
 const guildId = '1102185029926391838';
 const channelId = '1390416190031265844';
-const calimChannelId = '1390416190031265844';
+const calimChannelId = '1394943689239036005';
 
 /**
  * Accepts a Dank Memer market offer using a selfbot by sending a regular message.
@@ -18,6 +18,7 @@ async function acceptMarketOffer(botClient, scannerClinet, marketId, interaction
 
   const user = await mainbot.users.fetch(userId).catch(() => null);
   const mention = user ? `${user.username}#${user.discriminator}` : `<@${userId}>`;
+  let payAmount = 0;
 
 
   const channel = guild.channels.cache.get(channelId);
@@ -74,6 +75,10 @@ if (!actionRow) {
   console.log('⚠️ No action row found — maybe already accepted or malformed.');
   return;
 }
+const confirmTextComponent = replyMsg.components[0].components.find(c =>
+  c.type === `TEXT_DISPLAY` && c.content?.includes('For Your:')
+);
+payAmount = confirmTextComponent?.content.match(/- (⏣ [\d,]+)/)?.[1] || null;
 
 //console.dir(actionRow.components, {depth: null});
 // Step 5: Click confirm button
@@ -92,11 +97,65 @@ if (!confirmBtn) {
 const finalchannel = await botClient.channels.fetch(channelId);
 const finalmessage = await finalchannel.messages.fetch(replyMsg.id);
 
-await finalmessage.clickButton(confirmBtn.customId)
-await interaction.editReply({
-        content: `✅ Market offer accepted successfully!`
+const buttonclick = await finalmessage.clickButton(confirmBtn.customId);
+if (
+  buttonclick?.components?.[0]?.components?.[0]?.content?.includes('Successfully accepted') ||
+  buttonclick?.embeds?.some(embed =>
+    embed?.description?.includes('Action Confirmed') ||
+    embed?.title?.includes('Action Confirmed')
+  )
+){
+  await interaction.editReply({
+        content: `✅ Money transferred successfully!`
       });
-      
-console.log('✅ Market offer accepted successfully! by', mention);
+      // ✅ Send message to calimChannelId via mainbot
+  const claimChannel = await mainbot.channels.fetch(calimChannelId).catch(() => null);
+  if (claimChannel && claimChannel.isTextBased?.()) {
+    const now = Math.floor(Date.now() / 1000); // UNIX timestamp in seconds
+
+await claimChannel.send({
+  embeds: [
+    {
+      color: 0x00ff00, // Bright green
+      title: '🏴‍☠️ Pirate Payout Delivered!',
+      description: `✨ <@${userId}> just received a juicy payout from robbery tresures!`,
+      fields: [
+        {
+          name: '💰 Amount Received',
+          value: `**${payAmount || '???'}**`,
+          inline: true
+        },
+        {
+          name: '🕒 Time',
+          value: `<t:${Math.floor(Date.now() / 1000)}:F>`,
+          inline: true
+        }
+      ],
+      footer: {
+        text: '💸 Loot shared • We are Pirates'
+      },
+      timestamp: new Date()
+    }
+  ]
+});
+
+  }
+
+  // ✅ DM the user if cached or fetchable
+   console.log('✅ payAmount:', payAmount, `Received by:`, mention);
+}else {
+  console.log('❌ Failed to accept offer, maybe already accepted or invalid market ID');
+  await interaction.editReply({
+        content: `I cant get the response from Dank Memer, maybe already accepted`,
+      });
+  return;
+}
+  return {
+    success: true,
+    payAmount,
+    mention
+  };
+
+
 }
 module.exports = { acceptMarketOffer };
