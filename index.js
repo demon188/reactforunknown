@@ -588,6 +588,7 @@ if (scannerClient) {
     const data = await getAdminData();
     const isAdmin = data.admins.includes(msg.author.id);
     const isPiratePermitted = await isPirateAllowed(msg.author.id, 'join');
+    
 
  if (
   !isAdmin &&
@@ -630,9 +631,29 @@ if (scannerClient) {
 // ✅ Send joined message from main bot
 cooldowns.set(`join`, now);
 try {
-  const outputChannel = await mainBot.channels.fetch("1386432193617989735").catch(() => null);
+  const embed = repliedMsg.embeds?.[0];
+let robStarterName, robTargerName;
+if (embed?.title?.includes('is starting a bank robbery')) {
+  robStarterName = embed.title.split(' ')[0];
+  const descMatch = embed.description?.match(/\*\*(.*?)\*\*/);
+  robTargerName = descMatch?.[1];
+
+}
+  const outputChannel = await mainBot.channels.fetch("1395858765638537266").catch(() => null);
   if (outputChannel?.isTextBased?.()) {
-    await outputChannel.send("✅ JOINED ALL OF THEM");
+    await outputChannel.send({
+  content: "✌️ JOINED ALL OF THEM <@&1394390804713439365>",
+  embeds: [
+    {
+      color: 0x00ffcc,
+      title: "💥 Bank Robbery Join Attempt",
+      description: `**Robbery started by:** \`${robStarterName ?? 'unknown'}\`\n**Target bank:** \`${robTargerName ?? 'unknown'}\``,
+      footer: { text: "Pirate Crew 🚩" },
+      timestamp: new Date()
+    }
+  ]
+});
+
   }
 } catch (e) {
   console.error("❌ Failed to send output message:", e.message);
