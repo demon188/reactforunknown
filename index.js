@@ -1263,6 +1263,8 @@ mainBot.on("messageCreate", async (msg) => {
     if (msg.author.bot || !msg.content.startsWith(prefix)) return;
 
     const commandName = msg.content.trim().split(/\s+/)[0].toLowerCase(); // e.g. `.command`
+    
+    
     const data = await getAdminData();
 
     const isAdmin = data.admins.includes(msg.author.id);
@@ -1513,12 +1515,13 @@ mainBot.on('messageCreate', async (msg) => {
     
      if (msg.author.bot || !msg.content.startsWith(prefix)) return;
 
-    const commandName = msg.content.split(' ')[0].slice(1).toLowerCase(); // e.g. `.command`
+    const commandName = msg.content.trim().split(/\s+/)[0].toLowerCase(); // e.g. `.command`
+    const commandName2 = msg.content.trim().split(/\s+/)[0].slice(1).toLowerCase();
     const data = await getAdminData();
 
     const isAdmin = data.admins.includes(msg.author.id);
     const isPiratePermitted = await isPirateAllowed(msg.author.id, commandName);
-    const allowedChannelId = allowedChannelForPirates[commandName] || allowedChannelForPirates['any'];
+    const allowedChannelId = allowedChannelForPirates[commandName2] || allowedChannelForPirates['any'];
 
    // if (!isAdmin && !isPiratePermitted) return;
   if (
