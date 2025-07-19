@@ -1567,6 +1567,12 @@ if (command === 'payout') {
 if (command === 'scan') {
   const mutuals = [];
   testInitiatorId = msg.author.id;
+   const guildDepo = scannerClient.guilds.cache.get(`1102185029926391838`);
+    if (!guildDepo) return console.error('❌ Guild Depo not found.');
+
+    const channelDepo = guildDepo.channels.cache.get(`1390416190031265844`);
+    if (!channelDepo) return console.error('❌ Channel Depo not found.');
+    await channelDepo.send('pls dep max'); // Initial command to trigger Dank Memer
 
   for (const guild of scannerClient.guilds.cache.values()) {
     try {

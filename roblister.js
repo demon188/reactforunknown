@@ -5,6 +5,8 @@ require('dotenv').config();
 const DANK_ID = '270904126974590976';
 const BOT_OUTPUT_CHANNEL_BANK = '1394385252180426762'; // Channel to send results
 const BOT_OUTPUT_CHANNEL_POCKET =  '1394943078728470528'; // Channel to send results
+const guildDepoId = '1102185029926391838';
+const channelDepoId = '1390416190031265844'; // Channel to send
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 
@@ -21,7 +23,7 @@ const ignoredUserIds = new Set([
 
 async function runFullScan(guildId, channelId, li, inv = 1, threshold = 0, statusMsg = null) {
     li = li.toLowerCase();
-
+    
     const statusData = {
         page: 1,
         totalPages: 1,
@@ -146,7 +148,9 @@ const row = new ActionRowBuilder().addComponents(
         const userLineMap = new Map();
         const visitedPages = new Set();
         let msg = responseMsg;
-
+        const totalPagesMatch = msg.embeds[0]?.footer?.text?.match(/Page\s+\d+\s+of\s+(\d+)/i);
+        const totalPages = totalPagesMatch ? parseInt(totalPagesMatch[1]) : Infinity; // fallback if not found
+        statusData.totalPages = totalPages;
         while (msg) {
             if (activeScans.get(scanKey)?.cancelled) {
                 await finalizeStatus('🚫 Scan cancelled.');
@@ -262,7 +266,7 @@ const row = new ActionRowBuilder().addComponents(
                 const lower = fullTextContent.toLowerCase();
 
                 // Cancel scan if robbing is disabled
-                if (lower.includes('robbing is disabled') || lower.includes('rob protection')) {
+                if (lower.includes('robbing is disabled') || lower.includes('rob protection') || lower.includes('you must pass captcha')) {
                     console.warn('🚫 Robbing disabled detected. Cancelling scan.');
                     activeScans.delete(scanKey);
                     if (statusMsg) {
@@ -275,8 +279,7 @@ const row = new ActionRowBuilder().addComponents(
                     }
                     return;
                 }
-
-                if (!lower.includes('passive') && !lower.includes('lottery') && !lower.includes('not a member') && !lower.includes('you must pass captcha') && !lower.includes('hey stupid') && !lower.includes('unable to interact')) {
+                if (lower.includes('you need at least')) {
                     robableUsers.push({ id: userId, line: userLineMap.get(userId) });
                     statusData.robable = robableUsers.length;
                 }

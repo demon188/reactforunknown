@@ -20,15 +20,14 @@ client.on('messageCreate', async (msg) => {
 
   try {
     const fetchedMsg = await msg.channel.messages.fetch(messageId);
-    const embed = fetchedMsg.embeds?.[0];
-
-if (embed?.description?.includes(`They're trying to break`)) {
-  const descMatch = embed.description?.match(/\*\*(.*?)\*\*/);
-  const robTargerName = descMatch?.[1];
-  
-}
-console.log('Target:', robTargerName);
    // console.log('✅ Message JSON:\n', JSON.stringify(fetchedMsg, null, 2));
+    const embed = fetchedMsg.embeds?.[0];
+const footerText = embed?.footer?.text || '';
+const totalPagesMatch = footerText.match(/Page\s\d+\s+of\s+(\d+)/i);
+const totalPages = totalPagesMatch ? parseInt(totalPagesMatch[1]) : 1;
+
+console.log("📄 Total pages:", totalPages);
+    
     await msg.reply('✅ Message fetched. Check your console.');
   } catch (err) {
     console.error('❌ Failed to fetch message:', err);
